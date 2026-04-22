@@ -1,0 +1,284 @@
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { User, AffiliateSale, Product, OrderStatus, ProductType, Page } from '../types';
+import { getPurchasesByBuyerId, getProducts, addProductRating, updateSaleStatus } from '../services/storageService';
+import { ShoppingBagIcon, TruckIcon, CheckCircleIcon, ClockIcon, StarIcon, ArchiveBoxIcon, CheckIcon, MapPinIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
+import { useDialog } from '../services/DialogContext';
+
+interface PurchasesPageProps {
+  currentUser: User;
+  onNavigate: (page: Page, params?: Record<string, string>) => void;
+}
+
+const PurchasesPage: React.FC<PurchasesPageProps> = ({ currentUser, onNavigate }) => {
+  const { showAlert, showConfirm, showSuccess } = useDialog();
+  const [purchases, setPurchases] = useState<AffiliateSale[]>([]);
+  const [productsMap, setProductsMap] = useState<Record<string, Product>>({});
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<OrderStatus | 'ALL'>('ALL');
+  const [ratingModal, setRatingModal] = useState<{saleId: string, productId: string} | null>(null);
+  const [tempRating, setTempRating] = useState(5);
+  const [tempComment, setTempComment] = useState('');
+
+  const loadData = async () => {
+    setLoading(true);
+    const purchasesData = await getPurchasesByBuyerId(currentUser.id);
+    setPurchases(purchasesData);
+    
+    const allProducts = await getProducts();
+    const map: Record<string, Product> = {};
+    allProducts.forEach(p => map[p.id] = p);
+    setProductsMap(map);
+    
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadData();
+    // Polling opcional para checar novos status enquanto a página está aberta
+    const interval = setInterval(loadData, 10000);
+    return () => clearInterval(interval);
+  }, [currentUser.id]);
+
+  const filteredPurchases = useMemo(() => {
+    if (activeTab === 'ALL') return purchases;
+    return purchases.filter(p => p.status === activeTab);
+  }, [purchases, activeTab]);
+
+  const handleRateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ratingModal) return;
+    await addProductRating(ratingModal.saleId, tempRating, tempComment);
+    setRatingModal(null);
+    setTempComment('');
+    loadData();
+    showSuccess('Avaliação enviada com sucesso!');
+  };
+
+  const handleConfirmDelivery = async (saleId: string) => {
+    const confirmed = await showConfirm("Você confirma que o produto físico chegou em suas mãos e está em boas condições?");
+    if (confirmed) {
+       await updateSaleStatus(saleId, OrderStatus.DELIVERED);
+       loadData();
+       showSuccess("Pedido finalizado! Obrigado por confirmar.");
+    }
+  };
+
+  const getStatusConfig = (status: OrderStatus) => {
+    switch (status) {
+      case OrderStatus.WAITLIST:
+        return { 
+          label: 'Preparo', 
+          color: 'text-orange-600', 
+          bg: 'bg-orange-50', 
+          icon: ClockIcon, 
+          progress: 'w-1/4',
+          description: 'O vendedor está organizando seu pedido.' 
+        };
+      case OrderStatus.SHIPPING:
+        return { 
+          label: 'A Caminho', 
+          color: 'text-blue-600', 
+          bg: 'bg-blue-50', 
+          icon: TruckIcon, 
+          progress: 'w-3/4',
+          description: 'Seu item foi despachado e está em trânsito.' 
+        };
+      case OrderStatus.DELIVERED:
+        return { 
+          label: 'Entregue', 
+          color: 'text-green-600', 
+          bg: 'bg-green-50', 
+          icon: CheckCircleIcon, 
+          progress: 'w-full',
+          description: 'O ciclo deste pedido foi concluído com sucesso.' 
+        };
+      default:
+        return { 
+          label: 'Pendente', 
+          color: 'text-gray-600', 
+          bg: 'bg-gray-50', 
+          icon: ClockIcon, 
+          progress: 'w-0',
+          description: 'Aguardando processamento.' 
+        };
+    }
+  };
+
+  if (loading && purchases.length === 0) return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center">
+       <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+       <p className="font-black text-[10px] uppercase text-gray-400 tracking-widest">Sincronizando rastreio...</p>
+    </div>
+  );
+
+  return (
+    <div className="container mx-auto px-1 py-4 md:p-8 animate-fade-in max-w-5xl">
+      <header className="mb-8 px-4">
+        <h2 className="text-3xl md:text-5xl font-black text-gray-900 dark:text-white mb-2 tracking-tighter">Central de Pedidos</h2>
+        <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Rastreie suas compras e acesse seus conteúdos</p>
+      </header>
+
+      {/* Tabs Customizadas */}
+      <div className="flex gap-2 mb-8 overflow-x-auto no-scrollbar px-4 pb-2">
+         {[
+           { id: 'ALL', label: 'Todos', icon: ArchiveBoxIcon },
+           { id: OrderStatus.WAITLIST, label: 'Em Preparo', icon: ClockIcon },
+           { id: OrderStatus.SHIPPING, label: 'Em Trânsito', icon: TruckIcon },
+           { id: OrderStatus.DELIVERED, label: 'Concluídos', icon: CheckCircleIcon }
+         ].map(tab => (
+           <button
+             key={tab.id}
+             onClick={() => setActiveTab(tab.id as any)}
+             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase transition-all whitespace-nowrap shadow-sm border ${
+               activeTab === tab.id 
+                ? 'bg-blue-600 text-white border-blue-600 shadow-blue-200 dark:shadow-none' 
+                : 'bg-white dark:bg-white/5 text-gray-500 border-gray-100 dark:border-white/10'
+             }`}
+           >
+             <tab.icon className="h-4 w-4" />
+             {tab.label}
+           </button>
+         ))}
+      </div>
+
+      {filteredPurchases.length === 0 ? (
+        <div className="bg-white dark:bg-darkcard rounded-[3rem] p-20 text-center border-2 border-dashed border-gray-100 dark:border-white/10 mx-4">
+           <ShoppingBagIcon className="h-16 w-16 text-gray-200 dark:text-gray-800 mx-auto mb-6" />
+           <p className="text-gray-400 font-black uppercase text-xs tracking-widest">Nenhum registro encontrado</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 px-4 pb-32">
+          {filteredPurchases.map(sale => {
+            const product = productsMap[sale.productId];
+            if (!product) return null;
+            const config = getStatusConfig(sale.status);
+            const isPhysical = product.type === ProductType.PHYSICAL;
+
+            return (
+              <div key={sale.id} className="bg-white dark:bg-darkcard rounded-[2.5rem] shadow-xl border border-gray-50 dark:border-white/5 p-6 md:p-8 flex flex-col md:flex-row gap-8 items-center group transition-all hover:border-blue-500/20">
+                 
+                 <div className="relative shrink-0">
+                    <img src={product.imageUrls[0]} className="w-32 h-32 md:w-40 md:h-40 rounded-[2rem] object-cover shadow-2xl border-4 border-white dark:border-white/5" />
+                    <div className="absolute -top-2 -right-2 bg-blue-600 text-white p-2 rounded-xl shadow-lg border-2 border-white dark:border-darkcard">
+                       {isPhysical ? <TruckIcon className="h-5 w-5" /> : <SparklesIcon className="h-5 w-5" />}
+                    </div>
+                 </div>
+
+                 <div className="flex-1 space-y-5 w-full">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                       <div>
+                          <h4 className="font-black text-xl text-gray-900 dark:text-white leading-tight">{product.name}</h4>
+                          <p className="text-[10px] font-black text-blue-600 uppercase mt-1">Pedido #{(sale.id || '').split('-')[1] || '000'}</p>
+                       </div>
+                       <div className="text-center md:text-right">
+                          <p className="text-2xl font-black text-gray-900 dark:text-white">${sale.saleAmount.toFixed(2)}</p>
+                          <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{isPhysical ? 'Produto Físico' : 'Conteúdo Digital'}</span>
+                       </div>
+                    </div>
+
+                    <div className="bg-gray-50 dark:bg-white/5 p-5 rounded-[2rem] border border-gray-100 dark:border-white/5 space-y-4">
+                       <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                             <div className={`p-2 rounded-xl ${config.bg} ${config.color}`}>
+                                <config.icon className="h-5 w-5" />
+                             </div>
+                             <div>
+                                <span className={`text-xs font-black uppercase ${config.color}`}>{config.label}</span>
+                                <p className="text-[9px] text-gray-400 font-bold uppercase">{config.description}</p>
+                             </div>
+                          </div>
+                          <span className="text-[10px] font-bold text-gray-400">{new Date(sale.timestamp).toLocaleDateString()}</span>
+                       </div>
+                       
+                       <div className="w-full h-2.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden border border-white/5">
+                          <div className={`h-full ${config.color.replace('text', 'bg')} ${config.progress} transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(37,99,235,0.4)] relative`}>
+                             <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                          </div>
+                       </div>
+                    </div>
+
+                    {isPhysical && sale.shippingAddress && (
+                       <div className="flex items-start gap-3 px-2 bg-blue-50/30 dark:bg-blue-900/5 p-3 rounded-xl border border-blue-100/50">
+                          <MapPinIcon className="h-5 w-5 text-red-500 shrink-0" />
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium leading-relaxed uppercase tracking-tighter">
+                             Endereço: {sale.shippingAddress.address}, {sale.shippingAddress.city} - {sale.shippingAddress.zipCode}
+                          </p>
+                       </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-3 pt-2">
+                       {isPhysical && sale.status === OrderStatus.SHIPPING && (
+                          <button 
+                            onClick={() => handleConfirmDelivery(sale.id)}
+                            className="flex-1 bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all"
+                          >
+                             <CheckIcon className="h-5 w-5 stroke-[4]" /> Confirmar Recebimento
+                          </button>
+                       )}
+
+                       {!isPhysical && (
+                          <button 
+                            onClick={() => window.open(product.digitalContentUrl, '_blank')}
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2"
+                          >
+                             <SparklesIcon className="h-4 w-4" /> Acessar Conteúdo Digital
+                          </button>
+                       )}
+
+                       {sale.status === OrderStatus.DELIVERED && !sale.isRated && (
+                          <button 
+                            onClick={() => setRatingModal({saleId: sale.id, productId: product.id})}
+                            className="flex-1 bg-white dark:bg-white/5 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-white/10 transition-all"
+                          >
+                             Avaliar Produto
+                          </button>
+                       )}
+                    </div>
+                 </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal de Avaliação Moderno */}
+      {ratingModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-fade-in" onClick={() => setRatingModal(null)}>
+           <div className="bg-white dark:bg-darkcard w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative border border-white/10" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setRatingModal(null)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600"><CheckIcon className="h-6 w-6 rotate-45" /></button>
+              
+              <div className="text-center mb-8">
+                 <div className="bg-blue-50 dark:bg-blue-900/20 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <StarIconSolid className="h-8 w-8 text-blue-600" />
+                 </div>
+                 <h3 className="text-xl font-black dark:text-white uppercase tracking-tighter">Avaliar Produto</h3>
+                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Sua opinião ajuda a comunidade</p>
+              </div>
+
+              <form onSubmit={handleRateProduct} className="space-y-8">
+                 <div className="flex justify-center gap-2">
+                    {[1,2,3,4,5].map(star => (
+                      <button key={star} type="button" onClick={() => setTempRating(star)} className="transition-all active:scale-90">
+                         {star <= tempRating ? <StarIconSolid className="h-10 w-10 text-yellow-400 drop-shadow-md" /> : <StarIcon className="h-10 w-10 text-gray-200 dark:text-white/10" />}
+                      </button>
+                    ))}
+                 </div>
+                 <textarea 
+                  value={tempComment} 
+                  onChange={e => setTempComment(e.target.value)} 
+                  placeholder="Escreva um breve comentário sobre o produto..." 
+                  className="w-full p-5 bg-gray-50 dark:bg-white/5 rounded-3xl outline-none text-sm dark:text-white h-32 resize-none border-2 border-transparent focus:border-blue-500 transition-all font-medium" 
+                  required 
+                 />
+                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-[1.8rem] font-black text-xs uppercase tracking-[0.2em] shadow-2xl active:scale-95 transition-all">Enviar Avaliação</button>
+              </form>
+           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PurchasesPage;

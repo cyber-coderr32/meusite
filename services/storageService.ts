@@ -1,0 +1,2118 @@
+
+import { User, Post, PostType, ChatConversation, AdCampaign, Store, Product, AffiliateSale, Comment, ShippingAddress, ProductType, AudioTrack, Notification, NotificationType, CartItem, ProductRating, OrderStatus, CyberEvent, Story, Transaction, ContentReport, SystemLog, GlobalSettings, TransactionType, ChatType, GroupTheme, Message, SupportTicket, SupportMessage } from '../types';
+import { DEFAULT_PROFILE_PIC } from '../data/constants';
+import { checkContentSecurity } from './sentinelService';
+import { auth, db, storage, isFirebaseConfigured } from './firebaseClient';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { 
+  collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, onSnapshot,
+  getDocFromServer, getDocsFromServer, QuerySnapshot, DocumentData, arrayUnion
+} from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+// --- CLOUDINARY CONFIG ---
+// Prioritize environment variables, then fallback to hardcoded values
+export const CLOUDINARY_CLOUD_NAME = (import.meta as any).env?.VITE_CLOUDINARY_CLOUD_NAME || 'dblnktl9m';
+export const CLOUDINARY_UPLOAD_PRESET = (import.meta as any).env?.VITE_CLOUDINARY_UPLOAD_PRESET || 'CONEXWORLD';
+
+if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_UPLOAD_PRESET && CLOUDINARY_CLOUD_NAME !== 'dblnktl9m') {
+  console.log("✅ Cloudinary configurado via variáveis de ambiente.");
+} else if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_UPLOAD_PRESET) {
+  console.log("✅ Cloudinary configurado com sucesso (Hardcoded).");
+} else {
+  console.warn("⚠️ Cloudinary não detectado. Verifique as variáveis de ambiente VITE_CLOUDINARY_CLOUD_NAME e VITE_CLOUDINARY_UPLOAD_PRESET.");
+}
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string;
+    email?: string | null;
+    emailVerified?: boolean;
+    isAnonymous?: boolean;
+    tenantId?: string | null;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+/**
+ * Helper para evitar erros de estrutura circular no JSON.stringify
+ * Versão robusta que lida com objetos complexos e erros do Firebase
+ */
+export function safeJsonStringify(obj: any) {
+  const cache = new WeakSet();
+  
+  const replacer = (key: string, value: any) => {
+    if (typeof value === 'object' && value !== null) {
+      if (cache.has(value)) {
+        return '[Circular]';
+      }
+      cache.add(value);
+      
+      // Handle Errors specifically as they don't stringify well by default
+      if (value instanceof Error) {
+        return {
+          message: value.message,
+          name: value.name,
+          code: (value as any).code,
+          stack: value.stack
+        };
+      }
+
+      // Handle common Firebase internal types that might cause issues
+      if (value.constructor?.name === 'DocumentReference' || 
+          value.constructor?.name === 'Query' ||
+          value.constructor?.name === 'Firestore') {
+        return `[Firebase ${value.constructor.name}]`;
+      }
+    }
+    return value;
+  };
+
+  try {
+    return JSON.stringify(obj, replacer);
+  } catch (err) {
+    // Last resort if JSON.stringify still fails
+    try {
+      return String(obj);
+    } catch (e) {
+      return '[Unstringifiable Object]';
+    }
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMessage = error instanceof Error ? error.message : String(error);
+  
+  // Create a safe authInfo object
+  const authInfo = {
+    userId: auth?.currentUser?.uid || 'anonymous',
+    email: auth?.currentUser?.email || null,
+    emailVerified: auth?.currentUser?.emailVerified || false,
+    isAnonymous: auth?.currentUser?.isAnonymous || false,
+    tenantId: auth?.currentUser?.tenantId || null,
+    providerInfo: auth?.currentUser?.providerData?.map((provider: any) => ({
+      providerId: String(provider.providerId || ''),
+      displayName: String(provider.displayName || ''),
+      email: String(provider.email || ''),
+      photoUrl: String(provider.photoURL || '')
+    })) || []
+  };
+
+  const errInfo = {
+    error: errMessage,
+    authInfo,
+    operationType,
+    path: String(path)
+  };
+
+  try {
+    const serialized = safeJsonStringify(errInfo);
+    console.error('Firestore Error: ', serialized);
+    throw new Error(serialized);
+  } catch (stringifyError) {
+    // If stringify fails, log a simpler message
+    const fallbackMessage = `Firestore Error [${operationType}] at [${path}]: ${errMessage}`;
+    console.error(fallbackMessage);
+    throw new Error(fallbackMessage);
+  }
+}
+
+const CURRENT_USER_KEY = 'cyberphone_current_user_id';
+
+/**
+ * MAPEADOR DE DADOS
+ * Garante que os dados do usuário sejam respeitados
+ */
+export const mapUserData = (id: string, dbData: any, authUser?: any): User => {
+    const authDisplayName = authUser?.displayName || "";
+    const authPhotoURL = authUser?.photoURL || "";
+
+    // Mapeia nomes e fotos reais
+    let firstName = dbData?.firstName || authDisplayName.split(' ')[0] || "";
+    let lastName = dbData?.lastName || authDisplayName.split(' ').slice(1).join(' ') || "";
+
+    if (!firstName && authUser?.email) {
+        firstName = authUser.email.split('@')[0];
+        firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
+        lastName = "Membro";
+    }
+
+    const email = (dbData?.email || authUser?.email || '').toLowerCase().trim();
+    const isAdminEmail = email === 'ac926815124@gmail.com' || email === 'alfaajmc@gmail.com';
+
+    const lastSeen = Number(dbData?.lastSeen || 0);
+    const isOnline = !!dbData?.isOnline;
+    // Consideramos online apenas se o flag for true E houver atividade nos últimos 5 minutos
+    const isActuallyOnline = isOnline && (Date.now() - lastSeen < 5 * 60 * 1000);
+
+    return {
+        id: id,
+        firstName: firstName || 'Usuário',
+        lastName: lastName || 'Membro',
+        email: email,
+        phone: dbData?.phone || authUser?.phoneNumber || '',
+        documentId: dbData?.documentId || '',
+        birthDate: Number(dbData?.birthDate || Date.now()),
+        gender: dbData?.gender || null,
+        profilePicture: dbData?.profilePicture || authPhotoURL || DEFAULT_PROFILE_PIC,
+        coverPhoto: dbData?.coverPhoto || '',
+        followedUsers: dbData?.followedUsers || [],
+        followers: dbData?.followers || [],
+        balance: Number(dbData?.balance || 0),
+        bio: dbData?.bio || '',
+        storeId: dbData?.storeId || null,
+        isAdmin: isAdminEmail || !!dbData?.isAdmin,
+        isVerified: isAdminEmail || !!dbData?.isVerified,
+        idVerificationStatus: dbData?.idVerificationStatus || 'NOT_STARTED',
+        idVerificationDocs: dbData?.idVerificationDocs || null,
+        userType: isAdminEmail ? 'CREATOR' : (dbData?.userType || 'STANDARD'),
+        isOnline: isActuallyOnline,
+        lastSeen: lastSeen,
+        isMonetized: !!dbData?.isMonetized,
+        monetizationStatus: dbData?.monetizationStatus || 'INELIGIBLE',
+        monetizationGoals: dbData?.monetizationGoals || {
+            followersGoal: 1000,
+            watchHoursGoal: 4000,
+            shortsViewsGoal: 10000000,
+            currentFollowers: dbData?.followers?.length || 0,
+            currentWatchHours: dbData?.monetizationGoals?.currentWatchHours || 0,
+            currentShortsViews: dbData?.monetizationGoals?.currentShortsViews || 0,
+            termsAccepted: !!dbData?.monetizationGoals?.termsAccepted,
+            verificationStep: dbData?.idVerificationStatus === 'APPROVED'
+        },
+        address: dbData?.address || undefined
+    } as User;
+};
+
+export const findUserById = async (userId: string, authUserReference?: any): Promise<User | undefined> => {
+  if (!userId || !isFirebaseConfigured || !db) return undefined;
+  const isOwner = auth?.currentUser?.uid === userId;
+  const path = isOwner ? 'profiles' : 'public_profiles';
+  
+  try {
+    let docSnap;
+    try {
+      docSnap = await getDoc(doc(db, path, userId));
+    } catch (initialError: any) {
+      if (initialError.message && initialError.message.includes('offline')) {
+        console.warn("⚠️ Firestore Offline detectado. Tentando getDocFromServer...");
+        docSnap = await getDocFromServer(doc(db, path, userId));
+      } else {
+        throw initialError;
+      }
+    }
+
+    const currentAuth = authUserReference || auth?.currentUser;
+    
+    if (docSnap.exists()) {
+      return mapUserData(userId, docSnap.data(), currentAuth);
+    } else if (currentAuth && isOwner) {
+      // If owner and doesn't exist, create it (legacy or first login)
+      const newUser = mapUserData(userId, null, currentAuth);
+      
+      try {
+        // Create private profile
+        await setDoc(doc(db, 'profiles', userId), {
+            ...newUser,
+            timestamp: Date.now()
+        });
+
+        // Create public profile
+        const { email, phone, documentId, birthDate, balance, ...publicData } = newUser;
+        await setDoc(doc(db, 'public_profiles', userId), {
+            ...publicData,
+            timestamp: Date.now()
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'profiles/' + userId);
+      }
+      
+      return newUser;
+    }
+  } catch (e: any) { 
+    if (e.message && e.message.includes('offline')) {
+      console.warn("⚠️ Firestore Offline em findUserById:", e.message);
+    } else {
+      handleFirestoreError(e, OperationType.GET, path + '/' + userId);
+    }
+  }
+  return undefined;
+};
+
+// --- AUTENTICAÇÃO ---
+
+export const loginUser = async (email: string, password: string): Promise<User> => {
+  console.log("[STORAGE] Tentando login para:", email, "Auth inicializado:", !!auth);
+  if (!isFirebaseConfigured || !auth) {
+    throw new Error("Firebase Auth não está inicializado. Isso pode ser um problema de conexão temporário. Por favor, recarregue a página.");
+  }
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = await findUserById(userCredential.user.uid, userCredential.user);
+    
+    // Check for super admin email
+    const emailClean = (email || '').toLowerCase().trim();
+    const isAdminEmail = emailClean === 'ac926815124@gmail.com' || emailClean === 'alfaajmc@gmail.com';
+    if (isAdminEmail && user && db) {
+      if (!user.isAdmin || !user.isVerified || user.userType !== 'CREATOR') {
+        const updatedData = {
+          isAdmin: true,
+          isVerified: true,
+          userType: 'CREATOR'
+        };
+        await updateDoc(doc(db, 'profiles', user.id), updatedData);
+        await updateDoc(doc(db, 'public_profiles', user.id), updatedData);
+        user.isAdmin = true;
+        user.isVerified = true;
+        user.userType = 'CREATOR';
+      }
+    }
+
+    if (user) return user;
+    
+    // Se logou mas não achou perfil, tenta criar um básico (fallback)
+    console.warn("[STORAGE] Usuário logado mas perfil não encontrado. Criando fallback.");
+    const fallbackUser = mapUserData(userCredential.user.uid, null, userCredential.user);
+    
+    // Auto-admin for fallback too
+    if (isAdminEmail && db) {
+      fallbackUser.isAdmin = true;
+      fallbackUser.isVerified = true;
+      fallbackUser.userType = 'CREATOR';
+      
+      // Save it
+      await setDoc(doc(db, 'profiles', fallbackUser.id), { ...fallbackUser, timestamp: Date.now() });
+      const { email: e, phone, documentId, birthDate, balance, ...publicData } = fallbackUser;
+      await setDoc(doc(db, 'public_profiles', fallbackUser.id), { ...publicData, timestamp: Date.now() });
+    }
+
+    return fallbackUser;
+  } catch (e: any) {
+    console.error("Erro no login:", safeJsonStringify(e));
+    throw e;
+  }
+};
+
+export const createFirestoreUser = async (uid: string, userData: any, authUser: any): Promise<User> => {
+    let profilePicUrl = userData.profilePicture || DEFAULT_PROFILE_PIC;
+    if (userData.profileImageFile) {
+      try {
+        profilePicUrl = await uploadFile(userData.profileImageFile, 'profiles');
+      } catch (err) {
+        console.warn("Erro ao fazer upload da foto de perfil:", err);
+      }
+    }
+
+    let coverPhotoUrl = userData.coverPhoto || '';
+    if (userData.coverImageFile) {
+      try {
+        coverPhotoUrl = await uploadFile(userData.coverImageFile, 'covers');
+      } catch (err) {
+        console.warn("Erro ao fazer upload da foto de capa:", err);
+      }
+    }
+
+    try {
+      await updateProfile(authUser, {
+        displayName: `${userData.firstName} ${userData.lastName}`,
+        photoURL: profilePicUrl
+      });
+    } catch (err) {
+      console.warn("Erro ao atualizar displayName no Auth:", err);
+    }
+
+    const emailClean = (userData.email || '').toLowerCase().trim();
+    const isAdminEmail = emailClean === 'ac926815124@gmail.com' || emailClean === 'alfaajmc@gmail.com';
+    const newUser = mapUserData(uid, { 
+      ...userData, 
+      profilePicture: profilePicUrl,
+      coverPhoto: coverPhotoUrl,
+      birthDate: userData.birthDate || Date.now(),
+      gender: userData.gender,
+      isAdmin: isAdminEmail ? true : !!userData.isAdmin,
+      isVerified: isAdminEmail ? true : !!userData.isVerified,
+      userType: isAdminEmail ? 'CREATOR' : (userData.userType || 'STANDARD')
+    }, authUser);
+    
+    // Private profile (contains PII)
+    try {
+      if (db) {
+        await setDoc(doc(db, 'profiles', uid), {
+            ...newUser,
+            balance: 0,
+            followedUsers: [],
+            followers: [],
+            timestamp: Date.now()
+        });
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'profiles/' + uid);
+    }
+
+    // Public profile (no PII)
+    try {
+      if (db) {
+        const { email, phone, documentId, birthDate, balance, ...publicData } = newUser;
+        await setDoc(doc(db, 'public_profiles', uid), {
+            ...publicData,
+            followedUsers: [],
+            followers: [],
+            timestamp: Date.now()
+        });
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'public_profiles/' + uid);
+    }
+    
+    return newUser;
+};
+
+export const checkFieldUniqueness = async (field: string, value: string): Promise<boolean> => {
+  if (!db || !value) return true;
+  try {
+    const q = query(collection(db, 'profiles'), where(field, '==', value));
+    let snap;
+    try {
+      snap = await getDocs(q);
+    } catch (e: any) {
+      if (e.message?.includes('offline')) {
+        snap = await getDocsFromServer(q);
+      } else {
+        throw e;
+      }
+    }
+    return snap.empty;
+  } catch (err) {
+    console.error(`Erro ao verificar unicidade do campo ${field}:`, err);
+    return true; 
+  }
+};
+
+export const registerUser = async (userData: any): Promise<User> => {
+  console.log("[STORAGE] Tentando registro para:", userData.email, "Auth inicializado:", !!auth);
+  if (!isFirebaseConfigured || !auth) {
+    throw new Error("Firebase Auth não está inicializado. Isso pode ser um problema de conexão temporário. Por favor, recarregue a página.");
+  }
+
+  // Validação de unicidade do documento
+  if (userData.documentId) {
+    const isDocUnique = await checkFieldUniqueness('documentId', userData.documentId);
+    if (!isDocUnique) {
+      throw new Error("Este número de documento já está vinculado a outra conta.");
+    }
+  }
+
+  // Validação de unicidade do telefone (se houver)
+  if (userData.phone) {
+    const isPhoneUnique = await checkFieldUniqueness('phone', userData.phone);
+    if (!isPhoneUnique) {
+      throw new Error("Este número de celular já está vinculado a outra conta.");
+    }
+  }
+
+  // Validação de unicidade do e-mail no Firestore (além do Firebase Auth)
+  const isEmailUnique = await checkFieldUniqueness('email', userData.email);
+  if (!isEmailUnique) {
+    throw new Error("Este e-mail já está em uso por outra conta.");
+  }
+  
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+    return await createFirestoreUser(userCredential.user.uid, userData, userCredential.user);
+  } catch (e: any) {
+    console.error("Erro no registro:", safeJsonStringify(e));
+    throw e;
+  }
+};
+
+// --- CONTEÚDO (FIRESTORE) ---
+
+export const getPosts = async (): Promise<Post[]> => {
+  if (!isFirebaseConfigured || !db) return [];
+  try {
+    const q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'));
+    let snap;
+    try {
+      snap = await getDocs(q);
+    } catch (initialError: any) {
+      if (initialError.message && initialError.message.includes('offline')) {
+        console.warn("⚠️ Firestore Offline em getPosts. Tentando getDocsFromServer...");
+        snap = await getDocsFromServer(q);
+      } else {
+        throw initialError;
+      }
+    }
+    return snap.docs.map(d => ({ ...d.data(), id: d.id } as Post));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'posts');
+    return [];
+  }
+};
+
+export const getPostById = async (id: string): Promise<Post | undefined> => {
+  if (!isFirebaseConfigured || !db) return undefined;
+  const docSnap = await getDoc(doc(db, 'posts', id));
+  return docSnap.exists() ? { ...docSnap.data(), id: docSnap.id } as Post : undefined;
+};
+
+export const addPost = async (post: Post) => {
+  if (!isFirebaseConfigured || !db) return;
+
+  // Sentinela AI Check
+  const security = await checkContentSecurity(post.content || '', 'post');
+  if (!security.allowed) {
+      throw new Error(`SENTINEL_BLOCK: ${security.reason}`);
+  }
+
+  try {
+    await setDoc(doc(db, 'posts', post.id), post);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'posts/' + post.id);
+  }
+};
+
+export const updatePost = async (post: Post) => {
+  if (!isFirebaseConfigured || !db) return;
+  try {
+    await updateDoc(doc(db, 'posts', post.id), post as any);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, 'posts/' + post.id);
+  }
+};
+
+export const deletePost = async (postId: string) => {
+  if (!isFirebaseConfigured || !db) return;
+  try {
+    await deleteDoc(doc(db, 'posts', postId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'posts/' + postId);
+  }
+};
+
+// --- UPLOAD (CLOUDINARY) ---
+
+export const uploadFile = async (file: File | Blob, folder: string, retryCount = 0): Promise<string> => {
+  const cloudName = CLOUDINARY_CLOUD_NAME.trim();
+  const uploadPreset = CLOUDINARY_UPLOAD_PRESET.trim();
+
+  // Se não houver configuração do Cloudinary, avisa e usa blob local para não travar a UI
+  if (!cloudName || !uploadPreset) {
+    console.warn("⚠️ Cloudinary não configurado corretamente. Verifique VITE_CLOUDINARY_CLOUD_NAME e VITE_CLOUDINARY_UPLOAD_PRESET.");
+    return URL.createObjectURL(file);
+  }
+
+  try {
+    console.log(`[Cloudinary] Iniciando upload (${retryCount + 1}/3) para cloud: ${cloudName}, preset: ${uploadPreset}`);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', uploadPreset);
+    formData.append('cloud_name', cloudName);
+    formData.append('folder', `cyberphone/${folder}`);
+    
+    // Força tipo vídeo se for na pasta reels ou se o blob for vídeo
+    const isVideo = folder === 'reels' || (file instanceof File && file.type.startsWith('video/'));
+    const resourceType = isVideo ? 'video' : 'auto';
+    formData.append('resource_type', resourceType);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
+      {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { error: { message: errorText } };
+      }
+      
+      console.error("[Cloudinary] Erro detalhado:", errorData);
+      
+      const msg = errorData.error?.message || '';
+      if (msg.includes("Unknown API key")) {
+        throw new Error("Cloudinary: Assinatura Requerida. Verifique se o seu Preset está configurado como 'Unsigned' nas configurações de Upload do Cloudinary.");
+      }
+      if (msg.includes("Upload preset not found")) {
+        throw new Error(`Cloudinary: Preset '${uploadPreset}' não encontrado. Verifique a grafia nas configurações do Cloudinary.`);
+      }
+      
+      throw new Error(msg || 'Falha no upload para o Cloudinary');
+    }
+
+    const data = await response.json();
+    console.log("✅ [Cloudinary] Upload concluído com sucesso!");
+    return data.secure_url; 
+  } catch (error: any) {
+    console.error(`❌ Erro no upload Cloudinary (Tentativa ${retryCount + 1}):`, error);
+    
+    // Retry logic for transient errors
+    if (retryCount < 2 && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError'))) {
+      console.log(`[Cloudinary] Tentando novamente em 1s...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return uploadFile(file, folder, retryCount + 1);
+    }
+    
+    throw new Error(`Erro no upload: ${error.message || 'Erro desconhecido'}`);
+  }
+};
+
+// --- FUNÇÕES SOCIAIS ---
+
+export const createNotification = async (recipientId: string, actorId: string, type: NotificationType, postId?: string, groupName?: string) => {
+  if (!isFirebaseConfigured || !db || recipientId === actorId) return;
+  try {
+    await addDoc(collection(db, 'notifications'), {
+      recipientId,
+      actorId,
+      type,
+      postId: postId || null,
+      groupName: groupName || null,
+      timestamp: Date.now(),
+      isRead: false
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'notifications');
+  }
+};
+
+export const toggleFollowUser = async (cur: string, target: string) => {
+  if (!db) return;
+  const u1 = await findUserById(cur);
+  const u2 = await findUserById(target);
+  if (u1 && u2) {
+    const isFollowing = u1.followedUsers.includes(target);
+    const newFollowed = isFollowing ? u1.followedUsers.filter(i => i !== target) : [...u1.followedUsers, target];
+    const newFollowers = isFollowing ? u2.followers.filter(i => i !== cur) : [...u2.followers, cur];
+    
+    // Update both private and public profiles
+    await updateDoc(doc(db, 'profiles', cur), { followedUsers: newFollowed });
+    await updateDoc(doc(db, 'public_profiles', cur), { followedUsers: newFollowed });
+    
+    await updateDoc(doc(db, 'profiles', target), { followers: newFollowers });
+    await updateDoc(doc(db, 'public_profiles', target), { followers: newFollowers });
+
+    // Verificar se o usuário agora é elegível para monetização
+    const goals = u2.monetizationGoals || { 
+        followersGoal: 1000, 
+        watchHoursGoal: 4000, 
+        shortsViewsGoal: 10000000,
+        currentFollowers: 0,
+        currentWatchHours: 0,
+        currentShortsViews: 0
+    };
+    
+    const currentFollowers = newFollowers.length;
+    const meetsFollowers = currentFollowers >= goals.followersGoal;
+    const meetsViews = (goals.currentWatchHours || 0) >= goals.watchHoursGoal || (goals.currentShortsViews || 0) >= goals.shortsViewsGoal;
+    const meetsIdentity = u2.idVerificationStatus === 'APPROVED';
+
+    let newStatus = u2.monetizationStatus || 'INELIGIBLE';
+    if (newStatus === 'INELIGIBLE' && meetsFollowers && meetsViews && meetsIdentity) {
+        newStatus = 'ELIGIBLE';
+        await updateDoc(doc(db, 'profiles', target), { monetizationStatus: newStatus });
+        await updateDoc(doc(db, 'public_profiles', target), { monetizationStatus: newStatus });
+    }
+
+    if (!isFollowing) {
+      await createNotification(target, cur, NotificationType.NEW_FOLLOWER);
+    }
+  }
+};
+
+export const updatePostLikes = async (pid: string, uid: string) => {
+    if (!db) return;
+    const ref = doc(db, 'posts', pid);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const postData = d.data();
+        const likes = postData.likes || [];
+        const isLiking = !likes.includes(uid);
+        const newLikes = isLiking ? [...likes, uid] : likes.filter((i:any)=>i!==uid);
+        await updateDoc(ref, { likes: newLikes });
+
+        if (isLiking && postData.userId !== uid) {
+          await createNotification(postData.userId, uid, NotificationType.LIKE, pid);
+        }
+    }
+};
+
+export const incrementPostViews = async (pid: string) => {
+    if (!db) return;
+    const ref = doc(db, 'posts', pid);
+    const d = await getDoc(ref);
+    if (d.exists()) {
+        const postData = d.data();
+        const currentViews = postData.views || 0;
+        await updateDoc(ref, { views: currentViews + 1 });
+        
+        // Atualizar metas de monetização do autor
+        const authorId = postData.userId;
+        const authorRef = doc(db, 'profiles', authorId);
+        const authorDoc = await getDoc(authorRef);
+        if (authorDoc.exists()) {
+            const authorData = authorDoc.data();
+            const goals = authorData.monetizationGoals || { 
+                followersGoal: 1000, 
+                watchHoursGoal: 4000, 
+                shortsViewsGoal: 10000000,
+                currentFollowers: authorData.followers?.length || 0,
+                currentWatchHours: 0,
+                currentShortsViews: 0
+            };
+            
+            let newWatchHours = goals.currentWatchHours || 0;
+            let newShortsViews = goals.currentShortsViews || 0;
+
+            if (postData.type === PostType.REEL) {
+                newShortsViews += 1;
+            } else if (postData.type === PostType.VIDEO) {
+                newWatchHours += 0.05; // Simula 3 minutos de retenção média
+            }
+
+            const currentFollowers = authorData.followers?.length || 0;
+            const meetsFollowers = currentFollowers >= goals.followersGoal;
+            const meetsViews = newWatchHours >= goals.watchHoursGoal || newShortsViews >= goals.shortsViewsGoal;
+            const meetsIdentity = authorData.idVerificationStatus === 'APPROVED';
+
+            let newStatus = authorData.monetizationStatus || 'INELIGIBLE';
+            if (newStatus === 'INELIGIBLE' && meetsFollowers && meetsViews && meetsIdentity) {
+                newStatus = 'ELIGIBLE';
+            }
+            
+            const updateData: any = {
+                'monetizationGoals.currentWatchHours': newWatchHours,
+                'monetizationGoals.currentShortsViews': newShortsViews,
+                'monetizationGoals.currentFollowers': currentFollowers,
+                monetizationStatus: newStatus
+            };
+            
+            await updateDoc(authorRef, updateData);
+            await updateDoc(doc(db, 'public_profiles', authorId), { monetizationStatus: newStatus });
+        }
+    }
+};
+
+export const toggleReaction = async (targetId: string, targetType: 'COMMENT' | 'MESSAGE', emoji: string, userId: string, parentId?: string) => {
+    if (!db) return;
+    
+    if (targetType === 'COMMENT') {
+        const postRef = doc(db, 'posts', parentId!);
+        const postDoc = await getDoc(postRef);
+        if (postDoc.exists()) {
+            const postData = postDoc.data();
+            const comments = [...(postData.comments || [])];
+            
+            // Função recursiva para encontrar o comentário em qualquer nível de nesting
+            const findAndToggleInComments = (commentList: any[]): boolean => {
+                for (let i = 0; i < commentList.length; i++) {
+                    if (commentList[i].id === targetId) {
+                        const reactions = commentList[i].reactions || {};
+                        const userReactions = reactions[emoji] || [];
+                        
+                        if (userReactions.includes(userId)) {
+                            reactions[emoji] = userReactions.filter((id: string) => id !== userId);
+                        } else {
+                            reactions[emoji] = [...userReactions, userId];
+                        }
+                        
+                        commentList[i] = { ...commentList[i], reactions };
+                        return true;
+                    }
+                    if (commentList[i].replies && findAndToggleInComments(commentList[i].replies)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            if (findAndToggleInComments(comments)) {
+                await updateDoc(postRef, { comments });
+            }
+        }
+    } else if (targetType === 'MESSAGE') {
+        const chatRef = doc(db, 'chats', parentId!);
+        const chatDoc = await getDoc(chatRef);
+        if (chatDoc.exists()) {
+            const chatData = chatDoc.data();
+            const messages = [...(chatData.messages || [])];
+            const messageIndex = messages.findIndex(m => m.id === targetId);
+            
+            if (messageIndex !== -1) {
+                const message = messages[messageIndex];
+                
+                // Restrição: Dono da mensagem não pode reagir à própria mensagem
+                if (message.senderId === userId) {
+                    return; // Ignora se for o próprio autor
+                }
+
+                const reactions = message.reactions || {};
+                const userReactions = reactions[emoji] || [];
+                
+                if (userReactions.includes(userId)) {
+                    reactions[emoji] = userReactions.filter((id: string) => id !== userId);
+                } else {
+                    reactions[emoji] = [...userReactions, userId];
+                }
+                
+                messages[messageIndex] = { ...message, reactions };
+                await updateDoc(chatRef, { messages });
+            }
+        }
+    }
+};
+
+export const addCommentReply = async (postId: string, commentId: string, reply: any) => {
+    if (!db) return;
+
+    // Sentinela AI Check
+    const security = await checkContentSecurity(reply.text || '', 'comment');
+    if (!security.allowed) {
+        throw new Error(`SENTINEL_BLOCK: ${security.reason}`);
+    }
+
+    const postRef = doc(db, 'posts', postId);
+    const postDoc = await getDoc(postRef);
+    if (postDoc.exists()) {
+        const postData = postDoc.data();
+        const comments = [...(postData.comments || [])];
+        
+        const findAndAddReply = (commentList: any[]): boolean => {
+            for (let i = 0; i < commentList.length; i++) {
+                if (commentList[i].id === commentId) {
+                    commentList[i].replies = [...(commentList[i].replies || []), reply];
+                    return true;
+                }
+                if (commentList[i].replies && findAndAddReply(commentList[i].replies)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (findAndAddReply(comments)) {
+            await updateDoc(postRef, { comments });
+        }
+    }
+};
+
+export const addPostComment = async (pid: string, c: any) => {
+    if (!db) return;
+
+    // Sentinela AI Check
+    const security = await checkContentSecurity(c.content || '', 'comment');
+    if (!security.allowed) {
+        throw new Error(`SENTINEL_BLOCK: ${security.reason}`);
+    }
+
+    const ref = doc(db, 'posts', pid);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const postData = d.data();
+        await updateDoc(ref, { comments: [...(postData.comments || []), c] });
+
+        if (postData.userId !== c.userId) {
+          await createNotification(postData.userId, c.userId, NotificationType.COMMENT, pid);
+        }
+    }
+};
+
+// --- EXPORTS DE COMPATIBILIDADE ---
+export const generateUUID = () => crypto.randomUUID();
+export const saveUserAddress = async (uid: string, address: ShippingAddress) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'profiles', uid), { address });
+    await updateDoc(doc(db, 'public_profiles', uid), { address });
+};
+
+export const getCurrentUserId = (): string | null => localStorage.getItem(CURRENT_USER_KEY);
+export const saveCurrentUser = (id: string | null) => id ? localStorage.setItem(CURRENT_USER_KEY, id) : localStorage.removeItem(CURRENT_USER_KEY);
+export const getAppTheme = (): GroupTheme => (localStorage.getItem('cyber_app_theme') as GroupTheme) || 'blue';
+export const saveAppTheme = (t: GroupTheme) => localStorage.setItem('cyber_app_theme', t);
+export const updateUserStatus = async (id: string, online: boolean) => {
+  if (isFirebaseConfigured && auth?.currentUser && db) {
+    const data = { isOnline: online, lastSeen: Date.now() };
+    await updateDoc(doc(db, 'profiles', id), data).catch(() => {});
+    await updateDoc(doc(db, 'public_profiles', id), data).catch(() => {});
+  }
+};
+
+export const isUserOnline = (lastSeen: number | undefined, isOnline: boolean | undefined): boolean => {
+    if (!lastSeen) return false;
+    // Consideramos online apenas se foi visto nos últimos 5 minutos
+    return !!isOnline && (Date.now() - lastSeen < 1000 * 60 * 5);
+};
+
+export const formatLastSeen = (lastSeen: number | undefined, isOnline: boolean | undefined, t?: (key: string, options?: any) => string): string => {
+    const reallyOnline = isUserOnline(lastSeen, isOnline);
+    if (reallyOnline) return t ? t('online_now') : "Online agora";
+    if (!lastSeen) return t ? t('seen_long_ago') : "Visto há muito tempo";
+
+    const diff = Date.now() - lastSeen;
+    const minutes = Math.floor(diff / (1000 * 60));
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (t) {
+        if (minutes < 1) return t('seen_just_now');
+        if (minutes < 60) return t('seen_minutes_ago', { count: minutes });
+        if (hours < 24) return t('seen_hours_ago', { count: hours });
+        if (days < 7) return t('seen_days_ago', { count: days });
+        return t('seen_on', { date: new Date(lastSeen).toLocaleDateString() });
+    }
+
+    if (minutes < 1) return "Visto agora mesmo";
+    if (minutes < 60) return `Visto há ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`;
+    if (hours < 24) return `Visto há ${hours} ${hours === 1 ? 'hora' : 'horas'}`;
+    if (days < 7) return `Visto há ${days} ${days === 1 ? 'dia' : 'dias'}`;
+    
+    return `Visto em ${new Date(lastSeen).toLocaleDateString()}`;
+};
+export const getGlobalSettings = async (): Promise<GlobalSettings> => {
+    if (!isFirebaseConfigured || !db) return { platformTax: 0.1, minWithdrawal: 50, maintenanceMode: false, boostFee: 5 };
+    const docSnap = await getDoc(doc(db, 'settings', 'global'));
+    if (docSnap.exists()) {
+        const data = docSnap.data();
+        return {
+            platformTax: data.platformTax ?? 0.1,
+            minWithdrawal: data.minWithdrawal ?? 50,
+            maintenanceMode: data.maintenanceMode ?? false,
+            boostFee: data.boostFee ?? 5
+        } as GlobalSettings;
+    }
+    return { platformTax: 0.1, minWithdrawal: 50, maintenanceMode: false, boostFee: 5 };
+};
+export const getCart = () => JSON.parse(localStorage.getItem('cyberphone_cart') || '[]');
+export const getProducts = async () => {
+    if (!db) return [];
+    try {
+        return (await getDocs(collection(db, 'products'))).docs.map(d => ({...d.data(), id: d.id} as Product));
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'products');
+        return [];
+    }
+};
+export const getAds = async () => {
+    if (!isFirebaseConfigured || !db) return [];
+    try {
+        return (await getDocs(collection(db, 'ads'))).docs.map(d => ({...d.data(), id: d.id} as AdCampaign));
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'ads');
+        return [];
+    }
+};
+export const getStories = async (): Promise<Story[]> => {
+    if (!isFirebaseConfigured || !db) return [];
+    try {
+        const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
+        const q = query(
+            collection(db, 'stories'), 
+            where('timestamp', '>=', twentyFourHoursAgo),
+            orderBy('timestamp', 'desc')
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({ ...d.data(), id: d.id } as Story));
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'stories');
+        return [];
+    }
+};
+
+// FIX: Make uid optional to allow discovery of all chats in FeedPage
+export const getChats = async (uid?: string) => {
+    if (!isFirebaseConfigured || !db) return [];
+    try {
+        let q;
+        if (uid) {
+            // Se uid for fornecido, buscamos chats onde o usuário é participante
+            q = query(collection(db, 'chats'), where('participants', 'array-contains', uid));
+        } else {
+            // Se não, buscamos apenas grupos públicos para descoberta
+            q = query(collection(db, 'chats'), where('isPublic', '==', true));
+        }
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatConversation));
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'chats');
+        return [];
+    }
+};
+
+export const seedDatabase = async () => {
+    if (!isFirebaseConfigured || !db) return;
+    
+    // Check if we already have posts
+    const posts = await getPosts();
+    if (posts.length > 0) return;
+
+    console.log("[SEED] Populando banco de dados inicial...");
+
+    const samplePosts: Post[] = [
+        {
+            id: generateUUID(),
+            userId: 'system',
+            authorName: 'CyberPhone Team',
+            authorProfilePic: DEFAULT_PROFILE_PIC,
+            type: PostType.TEXT,
+            timestamp: Date.now() - 10000,
+            content: 'Bem-vindo ao CyberPhone! A rede social do futuro.',
+            likes: [],
+            comments: [],
+            shares: [],
+            saves: [],
+            tags: ['SOCIAL']
+        },
+        {
+            id: generateUUID(),
+            userId: 'system',
+            authorName: 'CyberPhone News',
+            authorProfilePic: DEFAULT_PROFILE_PIC,
+            type: PostType.IMAGE,
+            timestamp: Date.now() - 5000,
+            content: 'Confira as novas funcionalidades da nossa plataforma!',
+            imageUrl: 'https://picsum.photos/seed/tech/800/600',
+            likes: [],
+            comments: [],
+            shares: [],
+            saves: [],
+            tags: ['NEWS']
+        }
+    ];
+
+    for (const post of samplePosts) {
+        await addPost(post);
+    }
+
+    // Add a public group
+    const sampleGroup: ChatConversation = {
+        id: 'global-chat',
+        type: ChatType.GROUP,
+        participants: ['system'],
+        messages: [],
+        groupName: 'Comunidade Global',
+        isPublic: true,
+        description: 'O lugar para todos os usuários conversarem.'
+    };
+    try {
+        await setDoc(doc(db, 'chats', sampleGroup.id), sampleGroup);
+    } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, 'chats/' + sampleGroup.id);
+    }
+
+    console.log("[SEED] Banco de dados populado com sucesso.");
+};
+
+export const getUsers = async () => {
+    if (!isFirebaseConfigured || !db) return [];
+    const path = 'public_profiles';
+    try {
+        return (await getDocs(collection(db, path))).docs.map(d => mapUserData(d.id, d.data()));
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, path);
+        return [];
+    }
+};
+export const joinGroup = async (gid: string, uid: string) => {
+    if (!db) return;
+    const ref = doc(db, 'chats', gid);
+    const d = await getDoc(ref);
+    if(d.exists()) await updateDoc(ref, { participants: [...d.data().participants, uid] });
+};
+export const findStoreById = async (id: string) => {
+    if (!db) return undefined;
+    const d = await getDoc(doc(db, 'stores', id));
+    return d.exists() ? d.data() as Store : undefined;
+};
+export const saveAffiliateLink = async (u: string, p: string, l: string) => {
+    if (!db) return;
+    await addDoc(collection(db, 'affiliate_links'), { userId: u, productId: p, link: l, timestamp: Date.now() });
+};
+export const updatePostSaves = async (pid: string, uid: string) => {
+    if (!db) return;
+    const ref = doc(db, 'posts', pid);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const saves = d.data().saves || [];
+        const newSaves = saves.includes(uid) ? saves.filter((i:any)=>i!==uid) : [...saves, uid];
+        await updateDoc(ref, { saves: newSaves });
+    }
+};
+export const getNotificationsForUser = async (uid: string) => {
+    if (!isFirebaseConfigured || !db) return [];
+    const snap = await getDocs(query(collection(db, 'notifications'), where('recipientId', '==', uid), orderBy('timestamp', 'desc')));
+    return snap.docs.map(d => ({ ...d.data(), id: d.id } as Notification));
+};
+export const deleteNotification = async (id: string) => {
+    if (!isFirebaseConfigured || !db) return;
+    try {
+        await deleteDoc(doc(db, 'notifications', id));
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, 'notifications/' + id);
+    }
+};
+
+export const clearAllNotifications = async (uid: string) => {
+    if (!isFirebaseConfigured || !db) return;
+    try {
+        const snap = await getDocs(query(collection(db, 'notifications'), where('recipientId', '==', uid)));
+        for (const d of snap.docs) {
+            await deleteDoc(doc(db, 'notifications', d.id));
+        }
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, 'notifications');
+    }
+};
+
+export const markNotificationsAsRead = async (uid: string) => {
+    if (!isFirebaseConfigured || !db) return;
+    try {
+        const snap = await getDocs(query(collection(db, 'notifications'), where('recipientId', '==', uid), where('isRead', '==', false)));
+        for (const d of snap.docs) {
+            await updateDoc(doc(db, 'notifications', d.id), { isRead: true });
+        }
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, 'notifications');
+    }
+};
+export const getSavedPosts = async (uid: string) => {
+    if (!isFirebaseConfigured || !db) return [];
+    try {
+        const snap = await getDocs(query(collection(db, 'posts'), where('saves', 'array-contains', uid)));
+        return snap.docs.map(d => ({ ...d.data(), id: d.id } as Post)).sort((a,b) => b.timestamp - a.timestamp);
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'posts');
+        return [];
+    }
+};
+
+export const shareToGroup = async (groupId: string, senderId: string, content: string, type: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text', mediaUrl?: string) => {
+    if (!db) return;
+    const message: Message = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        senderId,
+        text: content,
+        timestamp: Date.now(),
+        fileType: type,
+        fileUrl: mediaUrl
+    };
+    try {
+        const chatRef = doc(db, 'chats', groupId);
+        const chatDoc = await getDoc(chatRef);
+        
+        if (chatDoc.exists()) {
+            await updateDoc(chatRef, {
+                messages: arrayUnion(message)
+            });
+        } else if (groupId.startsWith('dm-')) {
+            // Cria chat automático para DM se não existir
+            const participants = groupId.replace('dm-', '').split('-');
+            const newChat: ChatConversation = {
+                id: groupId,
+                type: ChatType.PRIVATE,
+                participants,
+                messages: [message],
+            };
+            await setDoc(chatRef, newChat);
+        }
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, 'chats/' + groupId);
+    }
+};
+
+export const subscribeToLivePost = (id: string, cb: any) => {
+    if (!db) return () => {};
+    return onSnapshot(doc(db, 'posts', id), (d) => cb(d.data()));
+};
+export const sendLiveMessage = async (id: string, msg: any) => {
+    if (!db) return;
+    const d = await getDoc(doc(db, 'posts', id));
+    if (d.exists()) {
+        await updateDoc(doc(db, 'posts', id), { liveChat: [...(d.data().liveChat || []), msg] });
+    }
+};
+export const manageLiveViewers = (id: string, action: string) => {
+    if (!db) return;
+    const ref = doc(db, 'posts', id);
+    getDoc(ref).then(d => {
+        if(d.exists()) {
+            const cur = d.data().liveViewerCount || 0;
+            updateDoc(ref, { liveViewerCount: Math.max(0, action === 'join' ? cur + 1 : cur - 1) });
+        }
+    });
+};
+export const pulseLiveHeart = (id: string) => {
+    if (!db) return;
+    const ref = doc(db, 'posts', id);
+    getDoc(ref).then(d => {
+        if(d.exists()) {
+            updateDoc(ref, { liveHeartCount: (d.data().liveHeartCount || 0) + 1 });
+        }
+    });
+};
+
+// FIX: Added optional description to match call in LiveStreamViewer
+export const processDonation = async (from: string, to: string, amt: number, description?: string) => {
+    if (!db) return false;
+    const u1 = await findUserById(from);
+    const u2 = await findUserById(to);
+    if(u1 && u2 && u1.balance! >= amt){
+        await updateDoc(doc(db, 'profiles', from), { balance: u1.balance! - amt });
+        await updateDoc(doc(db, 'profiles', to), { balance: u2.balance! + amt });
+        await addDoc(collection(db, 'transactions'), {
+            id: generateUUID(),
+            userId: from,
+            amount: -amt,
+            type: TransactionType.DONATION,
+            description: description || `Donation to user ${to}`,
+            timestamp: Date.now(),
+            status: 'COMPLETED'
+        });
+        return true;
+    }
+    return false;
+};
+
+export const findAudioTrackById = async (id: string) => undefined;
+export const unpinPost = async (id: string) => {
+    if (!db) return;
+    return updateDoc(doc(db, 'posts', id), { isPinned: false });
+};
+export const pinPost = async (id: string) => {
+    if (!db) return;
+    return updateDoc(doc(db, 'posts', id), { isPinned: true });
+};
+export const createReport = async (r: any) => {
+    if (!db) return;
+    return addDoc(collection(db, 'reports'), r);
+};
+export const updatePostShares = async (pid: string, uid: string) => {
+    if (!db) return;
+    const ref = doc(db, 'posts', pid);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const shares = d.data().shares || [];
+        if (!shares.includes(uid)) {
+            await updateDoc(ref, { shares: [...shares, uid] });
+        }
+    }
+};
+export const adminDeleteProduct = async (id: string) => {
+    if (!db) return;
+    return deleteDoc(doc(db, 'products', id));
+};
+export const updateSaleStatus = async (id: string, s: any) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'sales', id), { status: s });
+};
+export const updateSaleTracking = async (id: string, c: string, sid?: string) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'sales', id), { trackingCode: c, supplierOrderId: sid || '' });
+};
+export const fulfillDropshippingOrder = async (saleId: string, dropshipperId: string, cost: number) => {
+    if (!db) return false;
+    try {
+        const saleRef = doc(db, 'sales', saleId);
+        const saleDoc = await getDoc(saleRef);
+        if (!saleDoc.exists()) return false;
+        const sale = saleDoc.data() as AffiliateSale;
+
+        const productDoc = await getDoc(doc(db, 'products', sale.productId));
+        if (!productDoc.exists()) return false;
+        const dropshippedProduct = productDoc.data() as Product;
+
+        if (!dropshippedProduct.originalProductId) return false;
+
+        const originalProductDoc = await getDoc(doc(db, 'products', dropshippedProduct.originalProductId));
+        if (!originalProductDoc.exists()) return false;
+        const originalProduct = originalProductDoc.data() as Product;
+
+        const supplierStoreDoc = await getDoc(doc(db, 'stores', originalProduct.storeId));
+        if (!supplierStoreDoc.exists()) return false;
+        const supplierStore = supplierStoreDoc.data() as Store;
+        const supplierId = supplierStore.professorId;
+
+        const settings = await getGlobalSettings();
+        const platformTax = settings.platformTax / 100;
+
+        // 1. Deduct from Dropshipper
+        const dropshipperDoc = await getDoc(doc(db, 'profiles', dropshipperId));
+        if (dropshipperDoc.exists()) {
+            const ds = dropshipperDoc.data() as User;
+            if ((ds.balance || 0) < cost) return false;
+            await updateDoc(doc(db, 'profiles', dropshipperId), {
+                balance: (ds.balance || 0) - cost
+            });
+
+            const dsTransId = generateUUID();
+            await setDoc(doc(db, 'transactions', dsTransId), {
+                id: dsTransId,
+                userId: dropshipperId,
+                type: TransactionType.DROPSHIPPING_COST,
+                amount: -cost,
+                description: `Pagamento ao fornecedor: ${originalProduct.name}`,
+                timestamp: Date.now(),
+                status: 'COMPLETED'
+            });
+        }
+
+        // 2. Add to Supplier
+        const supplierEarnings = cost * (1 - platformTax);
+        const supplierDoc = await getDoc(doc(db, 'profiles', supplierId));
+        if (supplierDoc.exists()) {
+            const sup = supplierDoc.data() as User;
+            await updateDoc(doc(db, 'profiles', supplierId), {
+                balance: (sup.balance || 0) + supplierEarnings
+            });
+
+            const supTransId = generateUUID();
+            await setDoc(doc(db, 'transactions', supTransId), {
+                id: supTransId,
+                userId: supplierId,
+                type: TransactionType.SALE,
+                amount: supplierEarnings,
+                description: `Venda dropshipping: ${originalProduct.name}`,
+                timestamp: Date.now(),
+                status: 'COMPLETED'
+            });
+        }
+
+        // 3. Update Sale Status
+        await updateDoc(saleRef, {
+            status: OrderStatus.PROCESSING_SUPPLIER,
+            supplierOrderId: generateUUID().slice(0, 8).toUpperCase()
+        });
+
+        return true;
+    } catch (error) {
+        console.error("Erro ao processar fulfillment interno:", safeJsonStringify(error));
+        return false;
+    }
+};
+export const processUserUpgrade = async (uid: string, u: User, f: File, c: string) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'profiles', uid), { isVerified: true });
+};
+export const updateUserData = async (userId: string, data: Partial<User>) => {
+    if (!db) return;
+    try {
+        await updateDoc(doc(db, 'profiles', userId), {
+            ...data,
+            updatedAt: Date.now()
+        });
+        
+        // Se houver mudanças públicas, atualiza public_profiles tbm
+        const publicKeys: (keyof User)[] = ['firstName', 'lastName', 'profilePicture', 'coverPhoto', 'bio', 'isVerified', 'isOnline', 'userType', 'idVerificationStatus'];
+        const publicUpdate: any = {};
+        let hasPublicChange = false;
+        
+        publicKeys.forEach(key => {
+            if (data[key] !== undefined) {
+                publicUpdate[key] = data[key];
+                hasPublicChange = true;
+            }
+        });
+        
+        if (hasPublicChange) {
+            await updateDoc(doc(db, 'public_profiles', userId), publicUpdate);
+        }
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, 'profiles/' + userId);
+    }
+};
+
+export const updateUser = async (u: User) => {
+    const path = 'profiles';
+    const publicPath = 'public_profiles';
+    if (!db) return;
+    try {
+        // Update private profile
+        const { email, phone, documentId, birthDate, balance, ...publicData } = u;
+        await updateDoc(doc(db, path, u.id), u as any);
+
+        // Update public profile (only public fields)
+        await updateDoc(doc(db, publicPath, u.id), publicData as any);
+
+        // Update Firebase Auth profile if it's the current user
+        if (auth?.currentUser && auth.currentUser.uid === u.id) {
+            await updateProfile(auth.currentUser, {
+                displayName: `${u.firstName} ${u.lastName}`,
+                photoURL: u.profilePicture
+            });
+        }
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+};
+export const deleteUser = async (id: string) => {
+    if (!db) return;
+    return deleteDoc(doc(db, 'profiles', id));
+};
+export const updateUserPassword = async (p: string) => {};
+
+// FIX: Added missing exported members
+export const getEvents = async () => {
+    if (!db) return [];
+    try {
+        return (await getDocs(collection(db, 'events'))).docs.map(d => ({ ...d.data(), id: d.id } as CyberEvent));
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'events');
+        return [];
+    }
+};
+export const createEvent = async (evt: CyberEvent) => {
+    if (!db) return;
+    await setDoc(doc(db, 'events', evt.id), evt);
+};
+export const toggleJoinEvent = async (eId: string, uId: string) => {
+    if (!db) return;
+    const ref = doc(db, 'events', eId);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const attendees = d.data().attendees || [];
+        const newAttendees = attendees.includes(uId) ? attendees.filter((id:any)=>id!==uId) : [...attendees, uId];
+        await updateDoc(ref, { attendees: newAttendees });
+    }
+};
+
+export const sendMessage = async (chatId: string, msg: Message) => {
+    if (!db) return;
+
+    // Sentinela AI Check (apenas texto)
+    if (msg.text) {
+        const security = await checkContentSecurity(msg.text, 'message');
+        if (!security.allowed) {
+            throw new Error(`SENTINEL_BLOCK: ${security.reason}`);
+        }
+    }
+
+    const ref = doc(db, 'chats', chatId);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        await updateDoc(ref, { messages: [...(d.data().messages || []), msg] });
+    }
+};
+
+export const deleteMessage = async (chatId: string, messageId: string, hardDelete?: boolean) => {
+    if (!db) return;
+    const ref = doc(db, 'chats', chatId);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        let messages = d.data().messages || [];
+        if (hardDelete) {
+            messages = messages.filter((m: any) => m.id !== messageId);
+        } else {
+            messages = messages.map((m: any) => m.id === messageId ? { ...m, isDeleted: true, text: undefined, imageUrl: undefined, fileUrl: undefined } : m);
+        }
+        await updateDoc(ref, { messages });
+    }
+};
+
+export const editMessage = async (chatId: string, messageId: string, text: string) => {
+    if (!db) return;
+    const ref = doc(db, 'chats', chatId);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const messages = (d.data().messages || []).map((m: any) => m.id === messageId ? { ...m, text, isEdited: true } : m);
+        await updateDoc(ref, { messages });
+    }
+};
+
+export const updateGroupTheme = async (chatId: string, theme: GroupTheme) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'chats', chatId), { theme });
+};
+
+export const leaveGroup = async (chatId: string, userId: string) => {
+    if (!db) return;
+    const ref = doc(db, 'chats', chatId);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const participants = (d.data().participants || []).filter((id:any) => id !== userId);
+        await updateDoc(ref, { participants });
+    }
+};
+
+export const deleteChat = async (chatId: string) => {
+    if (!db) return;
+    await deleteDoc(doc(db, 'chats', chatId));
+};
+
+export const startPrivateChat = async (uid1: string, uid2: string) => {
+    if (!db) return;
+    
+    // Busca chats onde uid1 participa (não requer índice composto se for único filtro)
+    const q = query(
+        collection(db, 'chats'), 
+        where('participants', 'array-contains', uid1)
+    );
+    const snap = await getDocs(q);
+    
+    // Filtra pelo tipo e segundo participante localmente para evitar erro de índice ausente
+    let chat = snap.docs.find(d => {
+        const data = d.data();
+        const p = data.participants || [];
+        return data.type === ChatType.PRIVATE && p.includes(uid2);
+    });
+
+    if (chat) return chat.id;
+
+    // Se não existir, cria um novo
+    const id = generateUUID();
+    await setDoc(doc(db, 'chats', id), {
+        id,
+        type: ChatType.PRIVATE,
+        participants: [uid1, uid2],
+        messages: [],
+        timestamp: Date.now(),
+        theme: 'blue'
+    });
+    return id;
+};
+
+export const markChatMessagesAsRead = async (chatId: string, userId: string) => {
+    if (!db) return;
+    const ref = doc(db, 'chats', chatId);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const messages = (d.data().messages || []).map((m: any) => m.senderId !== userId ? { ...m, isRead: true } : m);
+        await updateDoc(ref, { messages });
+    }
+};
+
+export const getUnreadMessagesCount = async (userId: string): Promise<number> => {
+    if (!db) return 0;
+    try {
+        const snap = await getDocs(query(collection(db, 'chats'), where('participants', 'array-contains', userId)));
+        let count = 0;
+        snap.docs.forEach(d => {
+            const data = d.data();
+            const messages = data.messages || [];
+            messages.forEach((m: any) => {
+                if (m.senderId !== userId && !m.isRead) {
+                    count++;
+                }
+            });
+        });
+        return count;
+    } catch (e) {
+        return 0;
+    }
+};
+
+/**
+ * Funções de Monetização (Modelo YouTube)
+ */
+export const incrementWatchTime = async (userId: string, seconds: number) => {
+    if (!db || !userId) return;
+    try {
+        const userRef = doc(db, 'profiles', userId);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) return;
+        
+        const data = userSnap.data();
+        const currentHours = data.monetizationGoals?.currentWatchHours || 0;
+        const additionalHours = seconds / 3600;
+        
+        await updateDoc(userRef, {
+            'monetizationGoals.currentWatchHours': currentHours + additionalHours
+        });
+    } catch (e) {
+        console.error("Erro ao incrementar tempo de exibição:", e);
+    }
+};
+
+export const incrementShortsView = async (userId: string) => {
+    if (!db || !userId) return;
+    try {
+        const userRef = doc(db, 'profiles', userId);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) return;
+        
+        const data = userSnap.data();
+        const currentViews = data.monetizationGoals?.currentShortsViews || 0;
+        
+        await updateDoc(userRef, {
+            'monetizationGoals.currentShortsViews': currentViews + 1
+        });
+    } catch (e) {
+        console.error("Erro ao incrementar views de shorts:", e);
+    }
+};
+
+export const createAd = async (ad: AdCampaign) => {
+    if (!db) return;
+    await setDoc(doc(db, 'ads', ad.id), ad);
+};
+
+export const processAdInvestment = async (userId: string, amount: number, title: string) => {
+    if (!db) return false;
+    const user = await findUserById(userId);
+    if (user && user.balance! >= amount) {
+        await updateDoc(doc(db, 'profiles', userId), { balance: user.balance! - amount });
+        await addDoc(collection(db, 'transactions'), {
+            id: generateUUID(),
+            userId,
+            amount: -amount,
+            type: TransactionType.PURCHASE,
+            description: `Ad: ${title}`,
+            timestamp: Date.now(),
+            status: 'COMPLETED'
+        });
+        return true;
+    }
+    return false;
+};
+
+export const getStores = async () => {
+    if (!db) return [];
+    return (await getDocs(collection(db, 'stores'))).docs.map(d => d.data() as Store);
+};
+
+export const createStore = async (store: Store) => {
+    if (!db) return;
+    await setDoc(doc(db, 'stores', store.id), store);
+};
+
+export const updateStore = async (store: Store) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'stores', store.id), store as any);
+};
+
+export const getAudioTracks = async () => [];
+
+export const getSalesByAffiliateId = async (uid: string) => {
+    if (!db) return [];
+    return (await getDocs(query(collection(db, 'sales'), where('affiliateUserId', '==', uid)))).docs.map(d => d.data() as AffiliateSale);
+};
+
+export const getAffiliateLinks = async (uid: string) => {
+    if (!db) return [];
+    const snap = await getDocs(query(collection(db, 'affiliate_links'), where('userId', '==', uid)));
+    return snap.docs.map(d => d.data());
+};
+
+export const addToCart = (productId: string, quantity: number = 1, selectedColor?: string) => {
+    const cart = getCart();
+    const existingItem = cart.find((item: any) => item.productId === productId);
+    if (existingItem) {
+        existingItem.quantity += quantity;
+    } else {
+        cart.push({ productId, quantity, selectedColor });
+    }
+    localStorage.setItem('cyberphone_cart', safeJsonStringify(cart));
+};
+
+export const updateCartItemQuantity = (pid: string, qty: number) => {
+    let cart = getCart();
+    if (qty <= 0) cart = cart.filter((i:any) => i.productId !== pid);
+    else {
+        const item = cart.find((i:any) => i.productId === pid);
+        if (item) item.quantity = qty;
+    }
+    localStorage.setItem('cyberphone_cart', safeJsonStringify(cart));
+};
+
+export const removeFromCart = (pid: string) => {
+    const cart = getCart().filter((i:any) => i.productId !== pid);
+    localStorage.setItem('cyberphone_cart', safeJsonStringify(cart));
+};
+
+export const clearCart = () => {
+    localStorage.setItem('cyberphone_cart', '[]');
+};
+
+export const processProductPurchase = async (items: CartItem[], buyerId: string, affiliateId: string | null, address: ShippingAddress) => {
+    if (!db) return false;
+    try {
+        const settings = await getGlobalSettings();
+        const platformTax = settings.platformTax / 100;
+
+        for (const item of items) {
+            const productDoc = await getDoc(doc(db, 'products', item.productId));
+            if (!productDoc.exists()) continue;
+            const product = productDoc.data() as Product;
+            
+            const storeDoc = await getDoc(doc(db, 'stores', product.storeId));
+            if (!storeDoc.exists()) continue;
+            const store = storeDoc.data() as Store;
+            const sellerId = store.professorId;
+
+            const totalAmount = product.price * item.quantity;
+            const saleId = generateUUID();
+
+            // 1. Create Sale Record
+            const initialStatus = product.type === ProductType.PHYSICAL ? OrderStatus.WAITLIST : OrderStatus.DELIVERED;
+            
+            await setDoc(doc(db, 'sales', saleId), {
+                id: saleId,
+                productId: item.productId,
+                buyerId,
+                sellerId,
+                affiliateUserId: affiliateId || '',
+                storeId: product.storeId,
+                timestamp: Date.now(),
+                status: initialStatus,
+                shippingAddress: address,
+                saleAmount: totalAmount,
+                isDropshipping: product.isDropshipping || false,
+                supplierCost: product.originalPrice || 0
+            });
+
+            // 2. Handle Commissions and Balances
+            let sellerEarnings = totalAmount * (1 - platformTax);
+            let affiliateEarnings = 0;
+
+            if (affiliateId && product.affiliateCommissionRate > 0) {
+                affiliateEarnings = totalAmount * (product.affiliateCommissionRate / 100);
+                sellerEarnings -= affiliateEarnings;
+
+                // Update Affiliate Balance
+                const affiliateDoc = await getDoc(doc(db, 'profiles', affiliateId));
+                if (affiliateDoc.exists()) {
+                    const affiliate = affiliateDoc.data() as User;
+                    await updateDoc(doc(db, 'profiles', affiliateId), {
+                        balance: (affiliate.balance || 0) + affiliateEarnings
+                    });
+
+                    // Create Affiliate Transaction
+                    const affTransId = generateUUID();
+                    await setDoc(doc(db, 'transactions', affTransId), {
+                        id: affTransId,
+                        userId: affiliateId,
+                        type: TransactionType.SALE,
+                        amount: affiliateEarnings,
+                        description: `Comissão de afiliado: ${product.name}`,
+                        timestamp: Date.now(),
+                        status: 'COMPLETED'
+                    });
+                }
+            }
+
+            // Update Seller Balance
+            const sellerDoc = await getDoc(doc(db, 'profiles', sellerId));
+            if (sellerDoc.exists()) {
+                const seller = sellerDoc.data() as User;
+                await updateDoc(doc(db, 'profiles', sellerId), {
+                    balance: (seller.balance || 0) + sellerEarnings
+                });
+
+                // Create Seller Transaction
+                const sellTransId = generateUUID();
+                await setDoc(doc(db, 'transactions', sellTransId), {
+                    id: sellTransId,
+                    userId: sellerId,
+                    type: TransactionType.SALE,
+                    amount: sellerEarnings,
+                    description: `Venda de produto: ${product.name}`,
+                    timestamp: Date.now(),
+                    status: 'COMPLETED'
+                });
+            }
+
+            // Update Buyer Balance (Deducting)
+            const buyerDoc = await getDoc(doc(db, 'profiles', buyerId));
+            if (buyerDoc.exists()) {
+                const buyer = buyerDoc.data() as User;
+                await updateDoc(doc(db, 'profiles', buyerId), {
+                    balance: (buyer.balance || 0) - totalAmount
+                });
+
+                // Create Buyer Transaction
+                const buyTransId = generateUUID();
+                await setDoc(doc(db, 'transactions', buyTransId), {
+                    id: buyTransId,
+                    userId: buyerId,
+                    type: TransactionType.PURCHASE,
+                    amount: -totalAmount,
+                    description: `Compra de produto: ${product.name}`,
+                    timestamp: Date.now(),
+                    status: 'COMPLETED'
+                });
+            }
+        }
+
+        clearCart();
+        return true;
+    } catch (error) {
+        console.error("Erro ao processar compra:", safeJsonStringify(error));
+        return false;
+    }
+};
+
+export const updateUserBalance = async (uid: string, amt: number) => {
+    if (!db) return;
+    const u = await findUserById(uid);
+    if(u) await updateDoc(doc(db, 'profiles', uid), { balance: (u.balance || 0) + amt });
+};
+
+export const getPurchasesByBuyerId = async (uid: string) => {
+    if (!db) return [];
+    return (await getDocs(query(collection(db, 'sales'), where('buyerId', '==', uid)))).docs.map(d => d.data() as AffiliateSale);
+};
+
+export const addProductRating = async (saleId: string, rating: number, comment: string) => {
+    if (!db) return;
+    const saleRef = doc(db, 'sales', saleId);
+    const saleDoc = await getDoc(saleRef);
+    
+    if (saleDoc.exists()) {
+        const saleData = saleDoc.data() as AffiliateSale;
+        const productId = saleData.productId;
+        const userId = saleData.buyerId;
+        
+        // 1. Atualizar a venda
+        await updateDoc(saleRef, { isRated: true, rating, ratingComment: comment });
+        
+        // 2. Adicionar avaliação ao produto (se o produto existir)
+        const productRef = doc(db, 'products', productId);
+        const productDoc = await getDoc(productRef);
+        
+        if (productDoc.exists()) {
+            const product = productDoc.data() as Product;
+            const newRatingObj: ProductRating = {
+                id: generateUUID(),
+                saleId,
+                userId,
+                rating,
+                comment,
+                timestamp: Date.now()
+            };
+            
+            const currentRatings = product.ratings || [];
+            const newRatings = [...currentRatings, newRatingObj];
+            const newCount = newRatings.length;
+            const newAvg = newRatings.reduce((acc, r) => acc + r.rating, 0) / newCount;
+            
+            await updateDoc(productRef, {
+                ratings: newRatings,
+                averageRating: newAvg,
+                ratingCount: newCount
+            });
+        }
+    }
+};
+
+export const createProduct = async (p: Product) => {
+    if (!db) return;
+
+    // Sentinela AI Check
+    const security = await checkContentSecurity(`${p.name} ${p.description}`, 'product');
+    if (!security.allowed) {
+        throw new Error(`SENTINEL_BLOCK: ${security.reason}`);
+    }
+
+    await setDoc(doc(db, 'products', p.id), p);
+};
+
+export const getAffiliateSales = async (filters?: { affiliateUserId?: string, storeId?: string, buyerId?: string, sellerId?: string }) => {
+    if (!isFirebaseConfigured || !db) return [];
+    try {
+        let q: any = collection(db, 'sales');
+        
+        if (filters?.affiliateUserId) {
+            q = query(q, where('affiliateUserId', '==', filters.affiliateUserId));
+        } else if (filters?.sellerId) {
+            q = query(q, where('sellerId', '==', filters.sellerId));
+        } else if (filters?.storeId) {
+            q = query(q, where('storeId', '==', filters.storeId));
+        } else if (filters?.buyerId) {
+            q = query(q, where('buyerId', '==', filters.buyerId));
+        }
+        
+        let snap: QuerySnapshot<DocumentData>;
+        try {
+            snap = await getDocs(q);
+        } catch (initialError: any) {
+            if (initialError.message && (initialError.message.includes('offline') || initialError.message.includes('permissions'))) {
+                console.warn("⚠️ Problema de permissão ou offline. Tentando getDocsFromServer...");
+                snap = await getDocsFromServer(q);
+            } else {
+                throw initialError;
+            }
+        }
+        return snap.docs.map(d => ({ ...d.data(), id: d.id } as AffiliateSale));
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'sales');
+        return [];
+    }
+};
+
+export const addStory = async (uid: string, storyData: Partial<Story>, userName: string, userProfilePic: string) => {
+    if (!db) return;
+    const id = generateUUID();
+    await setDoc(doc(db, 'stories', id), { 
+        ...storyData, 
+        userId: uid, 
+        userName,
+        userProfilePic,
+        id, 
+        timestamp: Date.now(),
+        views: []
+    });
+};
+
+export const markStoryAsViewed = async (storyId: string, userId: string) => {
+    if (!db) return;
+    const ref = doc(db, 'stories', storyId);
+    try {
+        await updateDoc(ref, { views: arrayUnion(userId) });
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `stories/${storyId}`);
+    }
+};
+
+export const indicatePostToUser = async (pid: string, from: string, to: string) => {
+    if (!db) return false;
+    const ref = doc(db, 'posts', pid);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const indicated = d.data().indicatedUserIds || [];
+        if (!indicated.includes(to)) {
+            await updateDoc(ref, { indicatedUserIds: [...indicated, to] });
+            return true;
+        }
+    }
+    return false;
+};
+
+export const deleteComment = async (pid: string, cid: string) => {
+    if (!db) return;
+    const ref = doc(db, 'posts', pid);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const comments = (d.data().comments || []).filter((c:any) => c.id !== cid);
+        await updateDoc(ref, { comments });
+    }
+};
+
+export const getPlatformRevenue = async () => {
+    if (!db) return 0;
+    const snap = await getDocs(collection(db, 'transactions'));
+    return snap.docs.reduce((acc, d) => acc + (d.data().amount || 0), 0);
+};
+
+export const getTransactions = async (uid?: string) => {
+    if (!isFirebaseConfigured || !db) return [];
+    try {
+        const q = uid 
+            ? query(collection(db, 'transactions'), where('userId', '==', uid))
+            : collection(db, 'transactions'); // Admin will handle this if needed
+        const snap = await getDocs(q);
+        return snap.docs.map(d => d.data() as Transaction);
+    } catch (error) {
+        console.error("Erro ao buscar transações:", error);
+        return [];
+    }
+};
+
+export const getReports = async () => {
+    if (!db) return [];
+    return (await getDocs(collection(db, 'reports'))).docs.map(d => d.data() as ContentReport);
+};
+
+export const adminUpdateUser = async (u: User) => await updateUser(u);
+export const adminDeletePost = async (id: string) => await deletePost(id);
+export const adminProcessReport = async (id: string, status: string, adminId: string) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'reports', id), { status, resolvedBy: adminId });
+};
+
+export const updateGlobalSettings = async (s: GlobalSettings) => {
+    if (!db) return;
+    await setDoc(doc(db, 'settings', 'global'), s);
+};
+
+export const handleWalletTransaction = async (uid: string, amt: number, type: string) => {
+    if (!db) return false;
+    const u = await findUserById(uid);
+    if(u) {
+        if (type === 'withdraw' && u.balance! < amt) return false;
+        const diff = type === 'deposit' ? amt : -amt;
+        await updateDoc(doc(db, 'profiles', uid), { balance: u.balance! + diff });
+        await addDoc(collection(db, 'transactions'), {
+            id: generateUUID(),
+            userId: uid,
+            amount: diff,
+            type: type === 'deposit' ? TransactionType.DEPOSIT : TransactionType.WITHDRAWAL,
+            timestamp: Date.now(),
+            status: 'COMPLETED'
+        });
+        return true;
+    }
+    return false;
+};
+
+export const boostPost = async (pid: string, uid: string, days: number) => {
+    if (!db) return false;
+    const settings = await getGlobalSettings();
+    const fee = settings.boostFee || 0;
+    
+    // Check user balance
+    const userRef = doc(db, 'profiles', uid);
+    const userDoc = await getDoc(userRef);
+    if (!userDoc.exists()) return false;
+    
+    const userData = userDoc.data();
+    const balance = userData.balance || 0;
+    
+    if (balance < fee) return false;
+    
+    // Deduct balance
+    await updateDoc(userRef, { balance: balance - fee });
+    await updateDoc(doc(db, 'public_profiles', uid), { balance: balance - fee });
+    
+    // Boost post
+    await updateDoc(doc(db, 'posts', pid), { isBoosted: true, boostExpires: Date.now() + (days * 86400000) });
+    
+    // Create transaction log
+    const txId = generateUUID();
+    await setDoc(doc(db, 'transactions', txId), {
+        id: txId,
+        userId: uid,
+        amount: -fee,
+        type: 'PLATFORM_FEE',
+        description: `Boost de publicação - ${days} dias`,
+        status: 'COMPLETED',
+        timestamp: Date.now()
+    });
+
+    return true;
+};
+
+export const createGroup = async (name: string, members: string[], adminId: string, description?: string, theme?: GroupTheme, imageFile?: File, isPublic?: boolean) => {
+    if (!db) return;
+    const id = generateUUID();
+    let image = '';
+    if (imageFile) image = await uploadFile(imageFile, 'groups');
+    await setDoc(doc(db, 'chats', id), {
+        id,
+        type: ChatType.GROUP,
+        participants: [...members, adminId],
+        messages: [],
+        groupName: name,
+        groupImage: image,
+        adminId,
+        isPublic,
+        description,
+        theme: theme || 'blue',
+        timestamp: Date.now()
+    });
+};
+
+export const getSupportTickets = async (uid: string) => {
+    if (!db) return [];
+    return (await getDocs(query(collection(db, 'tickets'), where('userId', '==', uid)))).docs.map(d => d.data() as SupportTicket);
+};
+
+export const createSupportTicket = async (data: any, desc: string, url?: string, type?: string) => {
+    if (!db) return;
+    const id = generateUUID();
+    const msg: SupportMessage = { id: generateUUID(), senderId: data.userId, text: desc, attachmentUrl: url, attachmentType: type as any, timestamp: Date.now() };
+    await setDoc(doc(db, 'tickets', id), {
+        ...data,
+        id,
+        status: 'OPEN',
+        messages: [msg],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+    });
+};
+
+export const addSupportMessage = async (tid: string, msg: any) => {
+    if (!db) return;
+    const ref = doc(db, 'tickets', tid);
+    const d = await getDoc(ref);
+    if(d.exists()){
+        const data = d.data() as SupportTicket;
+        const m = { ...msg, id: generateUUID(), timestamp: Date.now() };
+        
+        const updateData: any = { 
+            messages: [...(data.messages || []), m], 
+            updatedAt: Date.now() 
+        };
+
+        // If sender is admin and ticket is not assigned, assign it
+        if (msg.senderId === 'SUPPORT' && !data.assignedAdminId) {
+            // We need the actual admin UID here. 
+            // Since msg.senderId is 'SUPPORT', we should pass the admin UID separately or use auth.currentUser.uid
+            if (auth?.currentUser) {
+                updateData.assignedAdminId = auth.currentUser.uid;
+            }
+        }
+
+        await updateDoc(ref, updateData);
+    }
+};
+
+export const getAdminSupportTickets = async () => {
+    if (!db) return [];
+    try {
+        // This might fail if there are tickets assigned to other admins due to security rules.
+        // We will handle the error and return what we can or an empty list.
+        const snap = await getDocs(collection(db, 'tickets'));
+        return snap.docs.map(d => d.data() as SupportTicket);
+    } catch (err) {
+        console.error("[STORAGE] Error fetching admin tickets (likely security restriction):", err);
+        return [];
+    }
+};
+
+export const subscribeToSupportTickets = (userId: string, callback: (tickets: SupportTicket[]) => void) => {
+    if (!db) return () => {};
+    const q = query(collection(db, 'tickets'), where('userId', '==', userId));
+    return onSnapshot(q, (snap) => {
+        callback(snap.docs.map(d => d.data() as SupportTicket));
+    }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'tickets');
+    });
+};
+
+export const subscribeToAdminSupportTickets = (callback: (tickets: SupportTicket[]) => void) => {
+    if (!db) return () => {};
+    return onSnapshot(collection(db, 'tickets'), (snap) => {
+        callback(snap.docs.map(d => d.data() as SupportTicket));
+    }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'tickets');
+    });
+};
+
+export const resolveSupportTicket = async (tid: string) => {
+    if (!db) return;
+    try {
+        await updateDoc(doc(db, 'tickets', tid), {
+            status: 'RESOLVED',
+            updatedAt: Date.now()
+        });
+    } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'tickets/' + tid);
+    }
+};
+
+export const getSystemLogs = async (): Promise<SystemLog[]> => {
+    if (!isFirebaseConfigured || !db) return [];
+    const snap = await getDocs(query(collection(db, 'logs'), orderBy('timestamp', 'desc'), limit(100)));
+    return snap.docs.map(d => ({ ...d.data(), id: d.id } as SystemLog));
+};

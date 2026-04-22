@@ -1,0 +1,103 @@
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>CyberPhone | Rede Social</title>
+    
+    <script>
+      // Polyfill para evitar erros de ambiente (process is not defined)
+      window.process = window.process || { env: { API_KEY: "" } };
+    </script>
+
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%232563eb'/></svg>" />
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: { 
+              darkbg: '#0a0c10', 
+              darkcard: '#12161f',
+              brand: 'var(--brand-color)',
+              brandHover: 'var(--brand-hover)',
+              brandLight: 'var(--brand-light)'
+            },
+            animation: {
+              'float': 'float 6s ease-in-out infinite',
+              'float-up': 'floatUp 2s ease-out forwards',
+            }
+          }
+        }
+      }
+    </script>
+    
+    <style>
+      :root {
+        --brand-color: #2563eb;
+        --brand-hover: #1d4ed8;
+        --brand-light: #eff6ff;
+      }
+      body { font-family: 'Inter', sans-serif; background-color: #f8fafc; margin: 0; }
+      .dark body { background-color: #0a0c10; color: #f8fafc; }
+      #root { min-height: 100vh; }
+      
+      /* --- GLOBAL SCROLLBAR HIDING (App-like feel) --- */
+      
+      /* Ocultar scrollbar para Chrome, Safari e Opera */
+      *::-webkit-scrollbar {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+      }
+
+      /* Ocultar scrollbar para IE, Edge e Firefox */
+      * {
+        -ms-overflow-style: none !important;  /* IE and Edge */
+        scrollbar-width: none !important;  /* Firefox */
+      }
+
+      /* Classe utilitária para garantir compatibilidade com código legado, mas mantendo oculto */
+      .custom-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      
+      .bg-brand-grad {
+        background: linear-gradient(135deg, var(--brand-color), var(--brand-hover));
+      }
+
+      .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+      /* Animação de Flutuação Suave */
+      @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-6px); }
+      }
+
+      /* Animação de Corações Subindo */
+      @keyframes floatUp {
+        0% { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+        50% { transform: translateY(-100px) scale(1.2) rotate(10deg); opacity: 0.8; }
+        100% { transform: translateY(-200px) scale(1.5) rotate(-10deg); opacity: 0; }
+      }
+      
+      /* Utilitário para pausar animação no hover */
+      .hover-pause:hover {
+        animation-play-state: paused;
+      }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Bebas+Neue&family=Montserrat:wght@400;700;900&family=Oswald:wght@400;700&family=Playfair+Display:wght@400;700;900&family=Roboto+Mono&family=Pacifico&family=Caveat:wght@400;700&family=Lobster&family=Abril+Fatface&family=Righteous&family=Permanent+Marker&family=Special+Elite&family=Cinzel:wght@400;700;900&family=Dancing+Script:wght@400;700&family=Fredoka+One&family=Press+Start+2P&family=Satisfy&family=UnifrakturMaguntia&family=Zilla+Slab:wght@400;700&family=Alumni+Sans+Inline+One&family=Bungee+Shade&family=Monoton&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Roboto Mono", monospace;
+  --font-bebas: "Bebas Neue", sans-serif;
+  --font-montserrat: "Montserrat", sans-serif;
+  --font-oswald: "Oswald", sans-serif;
+  --font-playfair: "Playfair Display", serif;
+  --font-pacifico: "Pacifico", cursive;
+  --font-caveat: "Caveat", cursive;
+  --font-lobster: "Lobster", cursive;
+  --font-abril: "Abril Fatface", cursive;
+  --font-righteous: "Righteous", cursive;
+  --font-marker: "Permanent Marker", cursive;
+  --font-special: "Special Elite", cursive;
+  --font-cinzel: "Cinzel", serif;
+  --font-dancing: "Dancing Script", cursive;
+  --font-fredoka: "Fredoka One", cursive;
+  --font-press: "Press Start 2P", cursive;
+  --font-satisfy: "Satisfy", cursive;
+  --font-gothic: "UnifrakturMaguntia", cursive;
+  --font-zilla: "Zilla Slab", serif;
+  --font-inline: "Alumni Sans Inline One", cursive;
+  --font-bungee: "Bungee Shade", cursive;
+  --font-monoton: "Monoton", cursive;
+
+  --color-darkcard: #1a1d23;
+  --color-darkbg: #15181e;
+  --color-brand: var(--brand-color);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-light: var(--brand-light);
+}
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Custom styles for CyberPhone */
+.cyber-gradient {
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+}
+
+.dark .cyber-gradient {
+  background: linear-gradient(135deg, #1d4ed8 0%, #6d28d9 100%);
+}
+
+.glass-morphism {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass-morphism {
+  background: rgba(15, 17, 23, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+@keyframes loading-bar {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+.animate-loading-bar {
+  animation: loading-bar 5s linear forwards;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

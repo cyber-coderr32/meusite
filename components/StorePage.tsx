@@ -1,0 +1,504 @@
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { User, Product, Store, ProductType, Page } from '../types';
+import {
+  getStores,
+  findStoreById,
+  findUserById,
+  getProducts,
+  saveAffiliateLink,
+} from '../services/storageService';
+import { DEFAULT_PROFILE_PIC } from '../data/constants';
+import { ShoppingCartIcon, CheckIcon, PlusIcon, StarIcon, ShoppingBagIcon, MagnifyingGlassIcon, FunnelIcon, Squares2X2Icon, BookOpenIcon, VideoCameraIcon, AcademicCapIcon, TruckIcon, LinkIcon, ChevronDownIcon, BoltIcon, BuildingStorefrontIcon, RocketLaunchIcon, ShareIcon } from '@heroicons/react/24/outline';
+import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
+import { useDialog } from '../services/DialogContext';
+import ProductDetailModal from './ProductDetailModal';
+import ShareModal from './ShareModal';
+
+interface StorePageProps {
+  currentUser: User;
+  onNavigate: (page: Page, params?: Record<string, string>) => void;
+  refreshUser: () => void;
+  storeId?: string;
+  productId?: string;
+  onAddToCart: (productId: string, quantity: number, selectedColor?: string) => void;
+  onOpenCart: () => void;
+}
+
+const ProductCard: React.FC<{ 
+  product: Product; 
+  currentUser: User;
+  brandColor?: string;
+  onSelect: (p: Product) => void; 
+  onShare: (p: Product) => void;
+  onAddToCart: (productId: string, quantity: number, selectedColor?: string) => void;
+  onOpenCart: () => void;
+}> = ({ product, currentUser, onSelect, onShare }) => {
+  const { showAlert } = useDialog();
+  const displayDiscount = product.discountPercentage || (product.originalPrice ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100) : 0);
+  const displayOriginalPrice = product.originalPrice || (displayDiscount > 0 ? product.price / (1 - displayDiscount / 100) : product.price);
+
+  return (
+    <div 
+      onClick={() => onSelect(product)} 
+      className="bg-white dark:bg-[#1a1a1a] rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group flex flex-col h-full border border-transparent hover:border-[#ff4747]/30"
+    >
+      <div className="relative aspect-square overflow-hidden bg-gray-100">
+        <img 
+          src={product.imageUrls[0]} 
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
+          alt={product.name} 
+        />
+        <div className="absolute top-2 right-2 flex flex-col gap-2">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onShare(product);
+              }}
+              className="p-1.5 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg hover:bg-white transition-all transform translate-x-10 group-hover:translate-x-0 duration-300"
+            >
+              <ShareIcon className="h-3.5 w-3.5 text-gray-600" />
+            </button>
+        </div>
+        {displayDiscount > 0 && (
+          <div className="absolute top-2 left-2 bg-[#ff4747] text-white text-[10px] font-bold px-2 py-0.5 rounded-sm shadow-sm">
+            -{displayDiscount}%
+          </div>
+        )}
+        {product.positioning === 'TOP_SEARCH' && (
+           <div className="absolute bottom-2 left-2 bg-amber-400 text-black text-[8px] font-black px-1.5 py-0.5 rounded-sm uppercase tracking-tighter shadow-xl">
+             🔝 Top Seller
+           </div>
+        )}
+      </div>
+      
+      <div className="p-3 flex flex-col flex-grow">
+        <h4 className="text-xs md:text-sm text-gray-800 dark:text-gray-200 line-clamp-2 leading-snug mb-2 group-hover:text-[#ff4747] transition-colors">
+          {product.name}
+        </h4>
+        
+        <div className="mt-auto">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-lg font-bold text-[#ff4747]">R$ {product.price.toFixed(2)}</span>
+            {displayOriginalPrice > product.price && (
+               <span className="text-[10px] text-gray-400 line-through">R$ {displayOriginalPrice.toFixed(2)}</span>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center">
+              <StarIconSolid className="h-2.5 w-2.5 text-[#ffb800]" />
+              <span className="text-[10px] font-medium text-gray-500 ml-0.5">{product.averageRating.toFixed(1)}</span>
+            </div>
+            <span className="text-[10px] text-gray-400">|</span>
+            <span className="text-[10px] text-gray-500">{product.ratingCount * 12 + 50} vendidos</span>
+          </div>
+          
+          <div className="mt-2 flex items-center gap-1">
+            {product.hasFreeShipping ? (
+               <span className="bg-[#fff0f0] text-[#ff4747] text-[9px] font-bold px-1.5 py-0.5 rounded-sm">Frete Grátis</span>
+            ) : product.shippingFee && (
+               <span className="bg-gray-100 text-gray-600 text-[9px] font-bold px-1.5 py-0.5 rounded-sm">Frete: R$ {product.shippingFee}</span>
+            )}
+            {product.type !== ProductType.PHYSICAL && (
+              <span className="bg-blue-50 text-blue-600 text-[9px] font-bold px-1.5 py-0.5 rounded-sm">Digital</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const StorePage: React.FC<StorePageProps> = ({ currentUser, onNavigate, storeId: propStoreId, productId: propProductId, onAddToCart, onOpenCart }) => {
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeCategory, setActiveCategory] = useState<ProductType | 'ALL'>('ALL');
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [currentStore, setCurrentStore] = useState<Store | null>(null);
+  const [currentBanner, setCurrentBanner] = useState(0);
+  const [shareContent, setShareContent] = useState<any>(null);
+  const featuredScrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollFeatured = (direction: 'left' | 'right') => {
+    if (featuredScrollRef.current) {
+      const { scrollLeft, clientWidth } = featuredScrollRef.current;
+      const scrollTo = direction === 'left' ? scrollLeft - (clientWidth * 0.8) : scrollLeft + (clientWidth * 0.8);
+      featuredScrollRef.current.scrollTo({ left: scrollTo, behavior: 'smooth' });
+    }
+  };
+
+  const banners = useMemo(() => {
+    const baseBanners = [
+      {
+        title: "Cyber Week",
+        subtitle: "Descontos explosivos em todo o marketplace!",
+        badge: "Super Oferta",
+        gradient: "from-[#ff4747] via-[#ff2e2e] to-[#d41414]",
+        icon: RocketLaunchIcon,
+        buttonText: "Explorar Agora",
+        isAd: false
+      },
+      {
+        title: "Cursos VIP",
+        subtitle: "Aprenda com os melhores profissionais da rede",
+        badge: "Educação",
+        gradient: "from-[#6366f1] via-[#4f46e5] to-[#3730a3]",
+        icon: AcademicCapIcon,
+        buttonText: "Ver Cursos",
+        isAd: false
+      }
+    ];
+
+    // Inject promoted products as banners
+    const promoted = allProducts
+      .filter(p => p.positioning === 'MAIN_BANNER')
+      .sort((a, b) => (b.bidAmount || 0) - (a.bidAmount || 0))
+      .slice(0, 3)
+      .map(p => ({
+        title: p.name,
+        subtitle: p.description,
+        badge: "Patrocinado",
+        gradient: "from-amber-500 via-orange-600 to-red-700",
+        icon: ShoppingBagIcon,
+        buttonText: "Comprar Agora",
+        isAd: true,
+        productId: p.id
+      }));
+
+    return [...promoted, ...baseBanners];
+  }, [allProducts]);
+
+  useEffect(() => {
+    if (!propStoreId) {
+      const timer = setInterval(() => {
+        setCurrentBanner(prev => (prev + 1) % banners.length);
+      }, 5000);
+      return () => clearInterval(timer);
+    }
+  }, [propStoreId, banners.length]);
+
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
+    const products = await getProducts();
+    if (propStoreId) {
+      const store = await findStoreById(propStoreId);
+      if (store) setCurrentStore(store);
+      setAllProducts(products.filter(p => p.storeId === propStoreId));
+    } else {
+      setCurrentStore(null);
+      setAllProducts(products);
+    }
+    setLoading(false);
+  }, [propStoreId]);
+
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  useEffect(() => {
+    if (propProductId && allProducts.length > 0) {
+      const p = allProducts.find(x => x.id === propProductId);
+      if (p) setSelectedProduct(p);
+    }
+  }, [propProductId, allProducts]);
+
+  const featuredProducts = useMemo(() => {
+    // Products with highest bids for TOP_SEARCH or those with high rating
+    return allProducts
+      .sort((a, b) => {
+        const bidA = a.positioning === 'TOP_SEARCH' ? (a.bidAmount || 0) * 10 : 0;
+        const bidB = b.positioning === 'TOP_SEARCH' ? (b.bidAmount || 0) * 10 : 0;
+        return (bidB + b.averageRating) - (bidA + a.averageRating);
+      });
+  }, [allProducts]);
+
+  const filteredProducts = useMemo(() => {
+    return featuredProducts.filter(p => {
+      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.description.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory = activeCategory === 'ALL' || p.type === activeCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [featuredProducts, searchTerm, activeCategory]);
+
+  const categories = [
+    { id: 'ALL', label: 'Tudo', icon: Squares2X2Icon },
+    { id: ProductType.PHYSICAL, label: 'Eletrônicos', icon: BoltIcon },
+    { id: ProductType.DIGITAL_COURSE, label: 'Cursos', icon: AcademicCapIcon },
+    { id: ProductType.DIGITAL_EBOOK, label: 'E-books', icon: BookOpenIcon },
+    { id: ProductType.DIGITAL_OTHER, label: 'Serviços', icon: RocketLaunchIcon }
+  ];
+
+  return (
+    <div className="bg-[#f8f8f8] dark:bg-[#0a0a0a] min-h-screen pt-20 pb-20">
+      {/* AliExpress Style Header */}
+      <div className="bg-white dark:bg-[#1a1a1a] sticky top-16 z-40 shadow-sm border-b dark:border-white/5">
+        <div className="container mx-auto px-4 py-4 max-w-[1200px]">
+          <div className="flex flex-col md:flex-row items-center gap-4">
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="bg-[#ff4747] p-1.5 rounded-lg">
+                <BuildingStorefrontIcon className="h-5 w-5 text-white" />
+              </div>
+              <h2 className="text-xl md:text-3xl font-bebas tracking-wider uppercase dark:text-white">
+                {currentStore ? currentStore.name : 'CyBer Marketplace'}
+              </h2>
+            </div>
+            
+            <div className="flex-1 w-full relative">
+              <input 
+                type="text" 
+                placeholder="Buscar no CyberExpress..." 
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full pl-4 pr-12 py-2.5 bg-[#f2f2f2] dark:bg-white/5 rounded-full outline-none text-sm dark:text-white border-2 border-transparent focus:border-[#ff4747] transition-all"
+              />
+              <button className="absolute right-1 top-1 bottom-1 px-5 bg-[#ff4747] text-white rounded-full hover:bg-[#e63e3e] transition-colors">
+                <MagnifyingGlassIcon className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-6 shrink-0">
+              <button onClick={() => onNavigate('manage-store')} className="flex flex-col items-center group">
+                <div className="p-2 rounded-full group-hover:bg-[#ff4747]/10 transition-colors">
+                  <BuildingStorefrontIcon className="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-[#ff4747]" />
+                </div>
+                <span className="text-[10px] font-bold text-gray-500 mt-0.5 uppercase tracking-tighter">Minha Loja</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Category Bar - "Dando vida às abas" */}
+      <div className="bg-white dark:bg-[#1a1a1a] border-b dark:border-white/5 overflow-x-auto no-scrollbar sticky top-[137px] md:top-[128px] z-30">
+        <div className="container mx-auto px-4 max-w-[1200px]">
+          <div className="flex items-center gap-2 py-3">
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id as any)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black uppercase tracking-tight transition-all duration-300 whitespace-nowrap ${
+                  activeCategory === cat.id 
+                    ? 'bg-[#ff4747] text-white shadow-lg shadow-[#ff4747]/30 scale-105' 
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5'
+                }`}
+              >
+                <cat.icon className={`h-4 w-4 ${activeCategory === cat.id ? 'animate-bounce' : ''}`} />
+                {cat.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="container mx-auto px-4 py-6 max-w-[1200px]">
+      {/* Banner Carousel */}
+      {!propStoreId && (
+        <div className="container mx-auto px-4 max-w-[1200px] mb-12">
+          <div className="relative group overflow-hidden rounded-[2.5rem] shadow-2xl border border-white/10 h-72 md:h-[450px]">
+            {banners.map((banner, index) => (
+              <div 
+                key={index}
+                className={`absolute inset-0 w-full h-full transition-all duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] flex items-center bg-gradient-to-br ${banner.gradient} ${
+                  index === currentBanner ? 'opacity-100 translate-x-0 scale-100' : index < currentBanner ? 'opacity-0 -translate-x-full scale-110' : 'opacity-0 translate-x-full scale-110'
+                }`}
+              >
+                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10 mix-blend-overlay"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+                
+                <div className="relative z-10 px-8 md:px-20 py-10 w-full flex flex-col items-start">
+                  <div className={`transition-all duration-700 delay-300 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+                    <span className="bg-white/20 backdrop-blur-md text-white text-[10px] md:text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-[0.2em] mb-6 inline-block border border-white/20 shadow-xl">
+                      {banner.badge}
+                    </span>
+                  </div>
+                  
+                  <h3 className={`text-5xl md:text-8xl font-black text-white uppercase tracking-tighter mb-4 drop-shadow-2xl leading-[0.9] transition-all duration-700 delay-400 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+                    {banner.title.split(' ').map((word, i) => (
+                      <span key={i} className="block">{word}</span>
+                    ))}
+                  </h3>
+                  
+                  <p className={`text-white/80 font-medium text-sm md:text-xl max-w-lg mb-10 transition-all duration-700 delay-500 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+                    {banner.subtitle}
+                  </p>
+                  
+                  <div className={`transition-all duration-700 delay-600 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+                    <button className="group/btn relative bg-white text-gray-900 px-12 py-5 rounded-2xl font-black text-xs md:text-sm uppercase shadow-2xl overflow-hidden active:scale-95 transition-all">
+                      <span className="relative z-10 flex items-center gap-2">
+                        {banner.buttonText} 
+                        <BoltIcon className="h-4 w-4 fill-current group-hover/btn:animate-pulse" />
+                      </span>
+                      <div className="absolute inset-0 bg-gray-100 translate-y-full group-hover/btn:translate-y-0 transition-transform duration-300"></div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className={`absolute -right-20 -bottom-20 transition-all duration-1000 delay-300 transform ${index === currentBanner ? 'translate-x-0 rotate-0 opacity-20' : 'translate-x-40 -rotate-12 opacity-0'}`}>
+                  <banner.icon className="h-[400px] md:h-[600px] w-[400px] md:w-[600px] text-white pointer-events-none" />
+                </div>
+              </div>
+            ))}
+
+            {/* Carousel Controls */}
+            <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none z-30">
+              <button 
+                onClick={(e) => { e.stopPropagation(); setCurrentBanner(prev => (prev - 1 + banners.length) % banners.length); }}
+                className="p-4 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-2xl border border-white/20 text-white pointer-events-auto transition-all transform hover:-translate-x-1 active:scale-90 opacity-0 group-hover:opacity-100"
+              >
+                <ChevronDownIcon className="h-6 w-6 rotate-90" />
+              </button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setCurrentBanner(prev => (prev + 1) % banners.length); }}
+                className="p-4 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-2xl border border-white/20 text-white pointer-events-auto transition-all transform hover:translate-x-1 active:scale-90 opacity-0 group-hover:opacity-100"
+              >
+                <ChevronDownIcon className="h-6 w-6 -rotate-90" />
+              </button>
+            </div>
+            
+            {/* Carousel Indicator Track */}
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 z-30">
+              {banners.map((_, index) => (
+                <button 
+                  key={index}
+                  onClick={() => setCurrentBanner(index)}
+                  className="group py-2 px-1 focus:outline-none"
+                >
+                  <div className={`h-1.5 rounded-full transition-all duration-500 overflow-hidden relative ${
+                    index === currentBanner ? 'w-12 bg-white' : 'w-3 bg-white/30 hover:bg-white/50'
+                  }`}>
+                    {index === currentBanner && (
+                      <div className="absolute inset-0 bg-white/40 animate-loading-bar origin-left"></div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+
+      {/* Featured Products Horizontal Carousel */}
+      {!propStoreId && filteredProducts.length > 0 && (
+        <div className="container mx-auto px-4 max-w-[1200px] mb-16 overflow-hidden">
+          <div className="flex items-end justify-between mb-8">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-1 bg-[#ff4747] rounded-full"></div>
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#ff4747]">Em Destaque</span>
+              </div>
+              <h3 className="text-3xl md:text-4xl font-black text-gray-900 dark:text-white tracking-tighter">Ofertas de Hoje</h3>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => scrollFeatured('left')}
+                className="p-2 border dark:border-white/10 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-30"
+              >
+                <ChevronDownIcon className="h-5 w-5 rotate-90" />
+              </button>
+              <button 
+                onClick={() => scrollFeatured('right')}
+                className="p-2 border dark:border-white/10 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-30"
+              >
+                <ChevronDownIcon className="h-5 w-5 -rotate-90" />
+              </button>
+            </div>
+          </div>
+
+          <div 
+            ref={featuredScrollRef}
+            className="flex gap-4 overflow-x-auto no-scrollbar scroll-smooth pb-4 -mx-4 px-4 snap-x snap-mandatory"
+          >
+            {filteredProducts.slice(0, 10).map(product => (
+              <div key={`featured-${product.id}`} className="min-w-[160px] md:min-w-[200px] snap-start">
+                <ProductCard 
+                  product={product} 
+                  currentUser={currentUser} 
+                  onSelect={setSelectedProduct}
+                  onShare={(p) => setShareContent({
+                    title: `Confira este produto: ${p.name}`,
+                    text: p.description,
+                    url: `${window.location.origin}/?page=store&productId=${p.id}`,
+                    mediaUrl: p.imageUrls[0],
+                    mediaType: 'image'
+                  })}
+                  onAddToCart={onAddToCart}
+                  onOpenCart={onOpenCart}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="container mx-auto px-4 py-2 max-w-[1200px]">
+        {/* Section Title for Main Grid */}
+        {!propStoreId && (
+          <div className="flex items-center gap-4 mb-8">
+            <h3 className="text-xl font-black uppercase tracking-widest text-gray-400 dark:text-gray-500">Navegue por Tudo</h3>
+            <div className="flex-1 h-px bg-gray-200 dark:bg-white/10"></div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="w-10 h-10 border-4 border-[#ff4747] border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : filteredProducts.length === 0 ? (
+          <div className="text-center py-20 bg-white dark:bg-[#1a1a1a] rounded-2xl shadow-sm">
+             <ShoppingBagIcon className="h-16 w-16 text-gray-200 mx-auto mb-4" />
+             <p className="text-gray-400 font-bold">Nenhum produto encontrado nesta categoria.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
+             {filteredProducts.map(product => (
+               <ProductCard 
+                 key={product.id} 
+                 product={product} 
+                 currentUser={currentUser} 
+                 onSelect={setSelectedProduct}
+                 onShare={(p) => setShareContent({
+                   title: `Confira este produto: ${p.name}`,
+                   text: p.description,
+                   url: `${window.location.origin}/?page=store&productId=${p.id}`,
+                   mediaUrl: p.imageUrls[0],
+                   mediaType: 'image'
+                 })}
+                 onAddToCart={onAddToCart}
+                 onOpenCart={onOpenCart}
+               />
+             ))}
+          </div>
+        )}
+      </div>
+
+      {selectedProduct && (
+        <ProductDetailModal 
+          product={selectedProduct} 
+          currentUser={currentUser}
+          onClose={() => setSelectedProduct(null)} 
+          onAddToCart={onAddToCart}
+          onNavigate={onNavigate}
+          onShare={(p) => setShareContent({
+            title: `Confira este produto: ${p.name}`,
+            text: p.description,
+            url: `${window.location.origin}/?page=store&productId=${p.id}`,
+            mediaUrl: p.imageUrls[0],
+            mediaType: 'image'
+          })}
+        />
+      )}
+
+      {shareContent && (
+        <ShareModal 
+          isOpen={!!shareContent}
+          onClose={() => setShareContent(null)}
+          currentUser={currentUser}
+          onNavigate={onNavigate}
+          content={shareContent}
+        />
+      )}
+    </div>
+  );
+};

@@ -1,0 +1,258 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Private user profile information (contains PII)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "documentId": { "type": "string" },
+        "birthDate": { "type": "number" },
+        "gender": { "type": "string", "enum": ["Masculino", "Feminino", "Personalizado"] },
+        "profilePicture": { "type": "string" },
+        "coverPhoto": { "type": "string" },
+        "followedUsers": { "type": "array", "items": { "type": "string" } },
+        "followers": { "type": "array", "items": { "type": "string" } },
+        "balance": { "type": "number" },
+        "bio": { "type": "string" },
+        "storeId": { "type": "string" },
+        "isAdmin": { "type": "boolean" },
+        "isVerified": { "type": "boolean" },
+        "isOnline": { "type": "boolean" },
+        "lastSeen": { "type": "number" }
+      },
+      "required": ["id", "firstName", "lastName", "email"]
+    },
+    "PublicUser": {
+      "title": "PublicUser",
+      "description": "Public user profile information (no PII)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "profilePicture": { "type": "string" },
+        "followedUsers": { "type": "array", "items": { "type": "string" } },
+        "followers": { "type": "array", "items": { "type": "string" } },
+        "bio": { "type": "string" },
+        "storeId": { "type": "string" },
+        "isAdmin": { "type": "boolean" },
+        "isVerified": { "type": "boolean" },
+        "isOnline": { "type": "boolean" },
+        "lastSeen": { "type": "number" }
+      },
+      "required": ["id", "firstName", "lastName"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Social media post",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorProfilePic": { "type": "string" },
+        "type": { "type": "string", "enum": ["TEXT", "IMAGE", "LIVE", "REEL"] },
+        "timestamp": { "type": "number" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "groupId": { "type": "string" },
+        "groupName": { "type": "string" },
+        "likes": { "type": "array", "items": { "type": "string" } },
+        "comments": { "type": "array", "items": { "$ref": "Comment" } },
+        "shares": { "type": "array", "items": { "type": "string" } },
+        "saves": { "type": "array", "items": { "type": "string" } },
+        "isPinned": { "type": "boolean" },
+        "isBoosted": { "type": "boolean" },
+        "boostExpires": { "type": "number" },
+        "disableComments": { "type": "boolean" },
+        "fontFamily": { "type": "string" },
+        "textColor": { "type": "string" },
+        "backgroundColor": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "reel": {
+          "type": "object",
+          "properties": {
+            "videoUrl": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        },
+        "liveStream": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "status": { "type": "string" }
+          }
+        }
+      },
+      "required": ["id", "userId", "type", "timestamp"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Post comment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "profilePic": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["id", "userId", "userName", "text", "timestamp"]
+    },
+    "ChatConversation": {
+      "title": "ChatConversation",
+      "description": "Chat conversation between users or in a group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["PRIVATE", "GROUP"] },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "messages": { "type": "array", "items": { "$ref": "Message" } },
+        "groupName": { "type": "string" },
+        "groupImage": { "type": "string" },
+        "adminId": { "type": "string" },
+        "isPublic": { "type": "boolean" },
+        "description": { "type": "string" },
+        "theme": { "type": "string" }
+      },
+      "required": ["id", "type", "participants"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Chat message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "text": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "fileType": { "type": "string" },
+        "isDeleted": { "type": "boolean" },
+        "isEdited": { "type": "boolean" },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["id", "senderId", "timestamp"]
+    },
+    "Story": {
+      "title": "Story",
+      "description": "User story (WhatsApp style)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userProfilePic": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "text": { "type": "string" },
+        "backgroundColor": { "type": "string" },
+        "textColor": { "type": "string" },
+        "fontFamily": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "views": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "userId", "timestamp"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "Support ticket for user assistance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "subject": { "type": "string" },
+        "category": { "type": "string", "enum": ["TECHNICAL", "BILLING", "ABUSE", "OTHER"] },
+        "status": { "type": "string", "enum": ["OPEN", "RESOLVED"] },
+        "messages": { "type": "array", "items": { "$ref": "SupportMessage" } },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "assignedAdminId": { "type": "string" }
+      },
+      "required": ["id", "userId", "subject", "category", "status", "createdAt", "updatedAt"]
+    },
+    "SupportMessage": {
+      "title": "SupportMessage",
+      "description": "Message within a support ticket",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "attachmentUrl": { "type": "string" },
+        "attachmentType": { "type": "string", "enum": ["image", "video"] },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["id", "senderId", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/profiles/{userId}": {
+      "schema": "User",
+      "description": "Private user profiles (PII)"
+    },
+    "/public_profiles/{userId}": {
+      "schema": "PublicUser",
+      "description": "Public user profiles (No PII)"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Social media posts"
+    },
+    "/chats/{chatId}": {
+      "schema": "ChatConversation",
+      "description": "Chat conversations"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    },
+    "/ads/{adId}": {
+      "schema": "AdCampaign",
+      "description": "Ad campaigns"
+    },
+    "/stores/{storeId}": {
+      "schema": "Store",
+      "description": "Stores"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Products"
+    },
+    "/sales/{saleId}": {
+      "schema": "AffiliateSale",
+      "description": "Sales records"
+    },
+    "/events/{eventId}": {
+      "schema": "CyberEvent",
+      "description": "Events"
+    },
+    "/stories/{storyId}": {
+      "schema": "Story",
+      "description": "Stories"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Transactions"
+    },
+    "/reports/{reportId}": {
+      "schema": "ContentReport",
+      "description": "Content reports"
+    },
+    "/tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "Support tickets"
+    },
+    "/logs/{logId}": {
+      "schema": "SystemLog",
+      "description": "System logs"
+    }
+  }
+}
