@@ -72,7 +72,7 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onNavigate, unreadNotifica
               <input
                 ref={searchInputRef}
                 type="text"
-                className="block w-full pl-11 pr-12 py-2.5 border border-transparent dark:border-white/5 rounded-2xl bg-gray-100/80 dark:bg-white/5 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand focus:bg-white dark:focus:bg-zinc-900 text-sm font-medium transition-all shadow-sm dark:text-white"
+                className="block w-full pl-11 pr-12 py-2.5 border border-transparent dark:border-white/5 rounded-2xl bg-gray-100/80 dark:bg-white/5 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand/50 focus:bg-white dark:focus:bg-zinc-900 text-sm font-medium transition-all shadow-sm dark:text-white group-focus-within:shadow-[0_0_15px_rgba(37,99,235,0.1)]"
                 placeholder="Pesquisar algo incrível..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
