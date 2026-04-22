@@ -366,7 +366,7 @@ const App: React.FC = () => {
         };
     }, [currentUser, refreshCurrentUser]);
 
-    const renderPage = () => {
+    function renderPage() {
         // PERMITIR PÁGINAS PÚBLICAS MESMO SEM USUÁRIO
         if (currentPage === 'terms') return <LegalPage type="terms" onBack={() => handleNavigate(currentUser ? 'settings' : 'auth')} />;
         if (currentPage === 'privacy') return <LegalPage type="privacy" onBack={() => handleNavigate(currentUser ? 'settings' : 'auth')} />;
@@ -413,9 +413,9 @@ const App: React.FC = () => {
             case 'ads': return <AdCampaignPage currentUser={currentUser} refreshUser={refreshCurrentUser} onNavigate={handleNavigate} />;
             default: return <FeedPage currentUser={currentUser} onNavigate={handleNavigate} refreshUser={refreshCurrentUser} />;
         }
-    };
+    }
 
-    const renderContent = () => {
+    function renderContent() {
         if (isLoading) {
             return (
                 <div className="h-screen w-full flex flex-col items-center justify-center bg-gray-50 dark:bg-[#0a0c10] p-6">
@@ -515,7 +515,7 @@ const App: React.FC = () => {
                 )}
             </div>
         );
-    };
+    }
 
     return (
         <DialogProvider>

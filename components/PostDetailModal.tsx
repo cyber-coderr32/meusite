@@ -364,7 +364,12 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, currentUser, on
                      ${hasBg ? `${post.backgroundColor} ${post.textColor || 'text-white'} rounded-2xl p-8 text-center my-4` : ''}
                    `}
                  >
-                    <p className={`whitespace-pre-wrap break-words w-full ${hasBg ? fontSizeClass : 'text-[18px] md:text-[22px] leading-normal dark:text-white'}`}>{post.content}</p>
+                    <p 
+                      style={{ fontFamily: `var(--${post.fontFamily || 'font-sans'})` }}
+                      className={`whitespace-pre-wrap break-words w-full ${hasBg ? fontSizeClass : 'text-[18px] md:text-[22px] leading-normal dark:text-white'}`}
+                    >
+                      {post.content}
+                    </p>
                  </div>
                  
                  {post.imageUrl && (

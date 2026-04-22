@@ -6,6 +6,15 @@ import './index.css';
 import './i18n';
 
 console.log("[BOOT] index.tsx Iniciado");
+
+// Captura erros globais de promessas (como os crashes internos do Firestore)
+window.addEventListener('unhandledrejection', (event) => {
+  if (event.reason && event.reason.message && event.reason.message.includes('FIRESTORE')) {
+    console.warn("⚠️ Detectado erro interno do Firestore. Ignorando para manter estabilidade:", event.reason.message);
+    event.preventDefault(); // Impede o crash global
+  }
+});
+
 try {
   const container = document.getElementById('root');
   if (container) {

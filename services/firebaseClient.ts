@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, getDocFromServer, getDoc, doc, enableNetwork } from "firebase/firestore";
+import { initializeFirestore, getDocFromServer, getDoc, doc, enableNetwork, persistentLocalCache, memoryLocalCache } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -35,14 +35,14 @@ if (dbId) {
 }
   
 // Use initializeFirestore with auto-detect settings to fix "client is offline" issues
+// We use memoryLocalCache temporarily to resolve the "INTERNAL ASSERTION FAILED: Unexpected state" 
+// which is often caused by persistence corruption in iframe environments.
 const db = app ? initializeFirestore(app, {
   // @ts-ignore
   experimentalAutoDetectLongPolling: true,
   // @ts-ignore
   ignoreUndefinedProperties: true,
-  localCache: {
-    kind: 'persistent',
-  }
+  localCache: memoryLocalCache()
 }, dbId as any) : null;
 const storage = app ? getStorage(app) : null;
 

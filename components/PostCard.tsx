@@ -449,7 +449,10 @@ const PostCard: React.FC<PostCardProps> = ({
                     ${hasBg ? `${post.backgroundColor} ${post.textColor || 'text-white'} rounded-2xl p-6 text-center my-2 shadow-inner` : 'text-left bg-transparent'} 
                     ${post.fontFamily || 'font-sans'}`}
                 >
-                  <p className={`whitespace-pre-wrap break-words w-full transition-all duration-300 ${hasBg ? fontSizeClass : 'text-[15px] md:text-[17px] leading-relaxed tracking-tight text-gray-900 dark:text-gray-100 font-medium'}`}>
+                  <p 
+                    style={{ fontFamily: `var(--${post.fontFamily || 'font-sans'})` }}
+                    className={`whitespace-pre-wrap break-words w-full transition-all duration-300 ${hasBg ? fontSizeClass : 'text-[15px] md:text-[17px] leading-relaxed tracking-tight text-gray-900 dark:text-gray-100 font-medium'}`}
+                  >
                     {translatedContent || displayContent}
                   </p>
                   

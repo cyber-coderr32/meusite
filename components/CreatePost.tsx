@@ -42,7 +42,13 @@ const FONTS = [
   { id: 'font-zilla', label: 'Zilla' },
   { id: 'font-inline', label: 'Inline' },
   { id: 'font-bungee', label: 'Bungee' },
-  { id: 'font-monoton', label: 'Monoton' }
+  { id: 'font-monoton', label: 'Monoton' },
+  { id: 'font-vibes', label: 'Vibes' },
+  { id: 'font-indie', label: 'Indie' },
+  { id: 'font-shadows', label: 'Shadows' },
+  { id: 'font-amatic', label: 'Amatic' },
+  { id: 'font-alex', label: 'Alex' },
+  { id: 'font-allura', label: 'Allura' }
 ];
 
 const COLORS = [
@@ -89,6 +95,10 @@ const CreatePost: React.FC<CreatePostProps> = ({ currentUser, onPostCreated, ref
           setImageUrl(p.imageUrl || '');
           setPostType(p.type);
           setDisableComments(p.disableComments || false);
+          if (p.fontFamily) setFontFamily(p.fontFamily);
+          if (p.textColor) setTextColor(p.textColor);
+          if (p.backgroundColor) setBackgroundColor(p.backgroundColor);
+          if (p.isAnonymous !== undefined) setIsAnonymous(p.isAnonymous);
         }
       });
     }
@@ -241,12 +251,19 @@ const CreatePost: React.FC<CreatePostProps> = ({ currentUser, onPostCreated, ref
        </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className={`rounded-3xl p-4 transition-all ${backgroundColor}`}>
+           <div key={fontFamily} className={`rounded-3xl p-4 transition-all duration-500 ease-in-out ${backgroundColor} ${fontFamily} ${backgroundColor !== 'bg-transparent' ? 'shadow-inner scale-[1.02]' : ''} animate-fade-in`}>
             <textarea 
               value={content} 
               onChange={e => setContent(e.target.value)}
-              className={`w-full bg-transparent outline-none resize-none font-medium text-lg min-h-[120px] placeholder:text-gray-600 ${textColor === 'text-white' && backgroundColor === 'bg-white' ? 'text-gray-900' : textColor} ${fontFamily}`}
+              autoFocus
+              style={{ fontFamily: `var(--${fontFamily})` }}
+              className={`w-full bg-transparent outline-none resize-none text-lg min-h-[120px] placeholder:text-gray-600 transition-all duration-300 ${textColor === 'text-white' && backgroundColor === 'bg-white' ? 'text-gray-900' : textColor}`}
               placeholder={t('say_something')}
+              onFocus={(e) => {
+                const val = e.target.value;
+                e.target.value = '';
+                e.target.value = val;
+              }}
             />
           </div>
 
@@ -265,33 +282,57 @@ const CreatePost: React.FC<CreatePostProps> = ({ currentUser, onPostCreated, ref
           )}
 
           {/* Text Styling Controls */}
-          <div className="flex flex-wrap gap-4 bg-white/5 p-4 rounded-2xl">
-             <div className="flex items-center gap-2">
-                <PaintBrushIcon className="h-4 w-4 text-gray-400" />
-                <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-[150px]">
-                   {BG_COLORS.map(c => (
-                      <button key={c} type="button" onClick={() => setBackgroundColor(c)} className={`w-6 h-6 rounded-full border ${c} ${backgroundColor === c ? 'border-white' : 'border-transparent'}`} />
-                   ))}
+          <div className="flex flex-col gap-6 bg-white/5 p-6 rounded-3xl border border-white/5 shadow-inner">
+             <div className="flex flex-wrap items-center gap-6">
+                <div className="flex items-center gap-3">
+                   <div className="p-2 bg-white/5 rounded-xl">
+                      <PaintBrushIcon className="h-4 w-4 text-gray-400" />
+                   </div>
+                   <div className="flex gap-1.5 overflow-x-auto no-scrollbar max-w-[200px] md:max-w-none pb-1">
+                      {BG_COLORS.map(c => (
+                         <button 
+                            key={c} 
+                            type="button" 
+                            onClick={() => setBackgroundColor(c)} 
+                            className={`w-7 h-7 rounded-full border-2 transform active:scale-95 transition-all cursor-pointer ${c === 'bg-white' ? 'bg-white' : (c === 'bg-black' ? 'bg-black border-white/20' : c)} ${backgroundColor === c ? 'border-blue-500 scale-110 shadow-lg ring-2 ring-blue-500/20' : 'border-white/10 hover:border-white/30'}`} 
+                         />
+                      ))}
+                   </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                   <div className="p-2 bg-white/5 rounded-xl">
+                      <SwatchIcon className="h-4 w-4 text-gray-400" />
+                   </div>
+                   <div className="flex gap-1.5 overflow-x-auto no-scrollbar max-w-[200px] md:max-w-none pb-1">
+                      {COLORS.map(c => (
+                         <button 
+                            key={c} 
+                            type="button" 
+                            onClick={() => setTextColor(c)} 
+                            className={`w-7 h-7 rounded-full border-2 transform active:scale-95 transition-all cursor-pointer ${c.replace('text-', 'bg-')} ${textColor === c ? 'border-blue-500 scale-110 shadow-lg ring-2 ring-blue-500/20' : 'border-white/10 hover:border-white/30'}`} 
+                         />
+                      ))}
+                   </div>
                 </div>
              </div>
-             <div className="flex items-center gap-2">
-                <SwatchIcon className="h-4 w-4 text-gray-400" />
-                <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-[150px]">
-                   {COLORS.map(c => (
-                      <button key={c} type="button" onClick={() => setTextColor(c)} className={`w-6 h-6 rounded-full border ${c.replace('text-', 'bg-')} ${textColor === c ? 'border-white' : 'border-transparent'}`} />
-                   ))}
-                </div>
-             </div>
-             <div className="flex items-center gap-2">
-                <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-[150px]">
+
+             <div className="flex flex-col gap-3 pt-4 border-t border-white/5">
+                <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">{t('typography') || 'Tipografia'}</p>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
                    {FONTS.map(f => (
                       <button 
                         key={f.id} 
                         type="button" 
-                        onClick={() => setFontFamily(f.id)} 
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all whitespace-nowrap ${f.id} ${fontFamily === f.id ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-600/20' : 'bg-white/5 text-gray-400 border-transparent hover:bg-white/10'}`}
+                        onClick={(e) => {
+                           e.stopPropagation();
+                           setFontFamily(f.id);
+                        }} 
+                        style={{ fontFamily: `var(--${f.id})` }}
+                        className={`px-5 py-3 rounded-xl text-base border transition-all whitespace-nowrap transform active:scale-95 hover:scale-105 flex flex-col items-center gap-1 ${fontFamily === f.id ? 'bg-blue-600 text-white border-blue-600 shadow-xl shadow-blue-600/40 z-10 scale-105' : 'bg-white/5 text-gray-300 border-white/5 hover:bg-white/10 hover:border-white/20'}`}
                       >
-                         {f.label}
+                         <span>{f.label}</span>
+                         {fontFamily === f.id && <div className="w-1 h-1 bg-white rounded-full animate-ping" />}
                       </button>
                    ))}
                 </div>
