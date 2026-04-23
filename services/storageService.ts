@@ -53,33 +53,43 @@ export interface FirestoreErrorInfo {
 
 /**
  * Helper para evitar erros de estrutura circular no JSON.stringify
- * Versão robusta que lida com objetos complexos e erros do Firebase
+ * Versão altamente robusta que lida com objetos complexos e erros do Firebase
  */
 export function safeJsonStringify(obj: any) {
   const cache = new WeakSet();
   
   const replacer = (key: string, value: any) => {
+    // Tratamento especial para Erros (que não serializam por padrão)
+    if (value instanceof Error) {
+      return {
+        message: value.message,
+        name: value.name,
+        code: (value as any).code,
+        stack: value.stack
+      };
+    }
+
     if (typeof value === 'object' && value !== null) {
+      // Detecção de circularidade
       if (cache.has(value)) {
         return '[Circular]';
       }
       cache.add(value);
       
-      // Handle Errors specifically as they don't stringify well by default
-      if (value instanceof Error) {
-        return {
-          message: value.message,
-          name: value.name,
-          code: (value as any).code,
-          stack: value.stack
-        };
+      // Tratamento para tipos internos do Firebase que costumam ter referências circulares ou complexas
+      const constructorName = value.constructor?.name;
+      if (constructorName === 'DocumentReference' || 
+          constructorName === 'Query' ||
+          constructorName === 'Firestore' ||
+          constructorName === 'CollectionReference' ||
+          constructorName === 'FirebaseAppImpl' ||
+          constructorName === 'FirebaseAuthImpl') {
+        return `[Firebase ${constructorName}]`;
       }
 
-      // Handle common Firebase internal types that might cause issues
-      if (value.constructor?.name === 'DocumentReference' || 
-          value.constructor?.name === 'Query' ||
-          value.constructor?.name === 'Firestore') {
-        return `[Firebase ${value.constructor.name}]`;
+      // Se o objeto tem um link circular conhecido por classes minificadas do Firebase (como Y2 e Ka do log)
+      if (value.i && value.src && (value.i.src === value || value.src.i === value)) {
+        return '[Circular Firebase Object]';
       }
     }
     return value;
@@ -88,11 +98,24 @@ export function safeJsonStringify(obj: any) {
   try {
     return JSON.stringify(obj, replacer);
   } catch (err) {
-    // Last resort if JSON.stringify still fails
+    // Se ainda falhar (ex: por causa de um .toJSON() problemático no objeto)
     try {
-      return String(obj);
-    } catch (e) {
-      return '[Unstringifiable Object]';
+      // Fallback: remove o método toJSON se ele existir para forçar a serialização direta com replacer
+      const seen = new Set();
+      const decycle = (target: any): any => {
+        if (target === null || typeof target !== 'object') return target;
+        if (seen.has(target)) return '[Circular]';
+        seen.add(target);
+        
+        const result: any = Array.isArray(target) ? [] : {};
+        for (const k in target) {
+          result[k] = decycle(target[k]);
+        }
+        return result;
+      };
+      return JSON.stringify(decycle(obj));
+    } catch (finalErr) {
+      return `[Unstringifiable: ${obj?.constructor?.name || typeof obj}]`;
     }
   }
 }
