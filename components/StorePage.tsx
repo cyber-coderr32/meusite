@@ -9,7 +9,7 @@ import {
   saveAffiliateLink,
 } from '../services/storageService';
 import { DEFAULT_PROFILE_PIC } from '../data/constants';
-import { ShoppingCartIcon, CheckIcon, PlusIcon, StarIcon, ShoppingBagIcon, MagnifyingGlassIcon, FunnelIcon, Squares2X2Icon, BookOpenIcon, VideoCameraIcon, AcademicCapIcon, TruckIcon, LinkIcon, ChevronDownIcon, BoltIcon, BuildingStorefrontIcon, RocketLaunchIcon, ShareIcon } from '@heroicons/react/24/outline';
+import { ShoppingCartIcon, CheckIcon, PlusIcon, StarIcon, ShoppingBagIcon, MagnifyingGlassIcon, FunnelIcon, Squares2X2Icon, BookOpenIcon, VideoCameraIcon, AcademicCapIcon, TruckIcon, LinkIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, BoltIcon, BuildingStorefrontIcon, RocketLaunchIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { useDialog } from '../services/DialogContext';
 import ProductDetailModal from './ProductDetailModal';
@@ -293,85 +293,87 @@ export const StorePage: React.FC<StorePageProps> = ({ currentUser, onNavigate, s
       <div className="container mx-auto px-4 py-6 max-w-[1200px]">
       {/* Banner Carousel */}
       {!propStoreId && (
-        <div className="container mx-auto px-4 max-w-[1200px] mb-12">
-          <div className="relative group overflow-hidden rounded-[2.5rem] shadow-2xl border border-white/10 h-72 md:h-[450px]">
-            {banners.map((banner, index) => (
-              <div 
-                key={index}
-                className={`absolute inset-0 w-full h-full transition-all duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] flex items-center bg-gradient-to-br ${banner.gradient} ${
-                  index === currentBanner ? 'opacity-100 translate-x-0 scale-100' : index < currentBanner ? 'opacity-0 -translate-x-full scale-110' : 'opacity-0 translate-x-full scale-110'
-                }`}
-              >
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10 mix-blend-overlay"></div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
-                
-                <div className="relative z-10 px-8 md:px-20 py-10 w-full flex flex-col items-start">
-                  <div className={`transition-all duration-700 delay-300 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-                    <span className="bg-white/20 backdrop-blur-md text-white text-[10px] md:text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-[0.2em] mb-6 inline-block border border-white/20 shadow-xl">
-                      {banner.badge}
-                    </span>
-                  </div>
-                  
-                  <h3 className={`text-5xl md:text-8xl font-black text-white uppercase tracking-tighter mb-4 drop-shadow-2xl leading-[0.9] transition-all duration-700 delay-400 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-                    {banner.title.split(' ').map((word, i) => (
-                      <span key={i} className="block">{word}</span>
-                    ))}
-                  </h3>
-                  
-                  <p className={`text-white/80 font-medium text-sm md:text-xl max-w-lg mb-10 transition-all duration-700 delay-500 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-                    {banner.subtitle}
-                  </p>
-                  
-                  <div className={`transition-all duration-700 delay-600 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-                    <button className="group/btn relative bg-white text-gray-900 px-12 py-5 rounded-2xl font-black text-xs md:text-sm uppercase shadow-2xl overflow-hidden active:scale-95 transition-all">
-                      <span className="relative z-10 flex items-center gap-2">
-                        {banner.buttonText} 
-                        <BoltIcon className="h-4 w-4 fill-current group-hover/btn:animate-pulse" />
-                      </span>
-                      <div className="absolute inset-0 bg-gray-100 translate-y-full group-hover/btn:translate-y-0 transition-transform duration-300"></div>
-                    </button>
-                  </div>
-                </div>
-
-                <div className={`absolute -right-20 -bottom-20 transition-all duration-1000 delay-300 transform ${index === currentBanner ? 'translate-x-0 rotate-0 opacity-20' : 'translate-x-40 -rotate-12 opacity-0'}`}>
-                  <banner.icon className="h-[400px] md:h-[600px] w-[400px] md:w-[600px] text-white pointer-events-none" />
-                </div>
-              </div>
-            ))}
-
-            {/* Carousel Controls */}
-            <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none z-30">
-              <button 
-                onClick={(e) => { e.stopPropagation(); setCurrentBanner(prev => (prev - 1 + banners.length) % banners.length); }}
-                className="p-4 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-2xl border border-white/20 text-white pointer-events-auto transition-all transform hover:-translate-x-1 active:scale-90 opacity-0 group-hover:opacity-100"
-              >
-                <ChevronDownIcon className="h-6 w-6 rotate-90" />
-              </button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setCurrentBanner(prev => (prev + 1) % banners.length); }}
-                className="p-4 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-2xl border border-white/20 text-white pointer-events-auto transition-all transform hover:translate-x-1 active:scale-90 opacity-0 group-hover:opacity-100"
-              >
-                <ChevronDownIcon className="h-6 w-6 -rotate-90" />
-              </button>
-            </div>
-            
-            {/* Carousel Indicator Track */}
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 z-30">
-              {banners.map((_, index) => (
-                <button 
+        <div className="w-full mb-8 md:mb-12">
+          <div className="container mx-auto px-0 md:px-4 max-w-[1200px]">
+            <div className="relative group overflow-hidden md:rounded-[2.5rem] shadow-2xl md:border md:border-white/10 h-80 md:h-[480px]">
+              {banners.map((banner, index) => (
+                <div 
                   key={index}
-                  onClick={() => setCurrentBanner(index)}
-                  className="group py-2 px-1 focus:outline-none"
+                  className={`absolute inset-0 w-full h-full transition-all duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] flex items-center bg-gradient-to-br ${banner.gradient} ${
+                    index === currentBanner ? 'opacity-100 translate-x-0 scale-100' : index < currentBanner ? 'opacity-0 -translate-x-full scale-110' : 'opacity-0 translate-x-full scale-110'
+                  }`}
                 >
-                  <div className={`h-1.5 rounded-full transition-all duration-500 overflow-hidden relative ${
-                    index === currentBanner ? 'w-12 bg-white' : 'w-3 bg-white/30 hover:bg-white/50'
-                  }`}>
-                    {index === currentBanner && (
-                      <div className="absolute inset-0 bg-white/40 animate-loading-bar origin-left"></div>
-                    )}
+                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10 mix-blend-overlay"></div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+                  
+                  <div className="relative z-10 px-6 md:px-20 py-10 w-full flex flex-col items-center md:items-start text-center md:text-left">
+                    <div className={`transition-all duration-700 delay-300 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+                      <span className="bg-white/20 backdrop-blur-md text-white text-[9px] md:text-xs font-black px-3 md:px-4 py-1.5 rounded-full uppercase tracking-[0.2em] mb-4 md:mb-6 inline-block border border-white/20 shadow-xl">
+                        {banner.badge}
+                      </span>
+                    </div>
+                    
+                    <h3 className={`text-4xl md:text-8xl font-black text-white uppercase tracking-tighter mb-3 md:mb-4 drop-shadow-2xl leading-[0.9] transition-all duration-700 delay-400 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+                      {banner.title.split(' ').map((word, i) => (
+                        <span key={i} className="block">{word}</span>
+                      ))}
+                    </h3>
+                    
+                    <p className={`text-white/80 font-medium text-xs md:text-xl max-w-xs md:max-w-lg mb-6 md:mb-10 transition-all duration-700 delay-500 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+                      {banner.subtitle}
+                    </p>
+                    
+                    <div className={`transition-all duration-700 delay-600 transform ${index === currentBanner ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+                      <button className="group/btn relative bg-white text-gray-900 px-8 md:px-12 py-3.5 md:py-5 rounded-xl md:rounded-2xl font-black text-[10px] md:text-sm uppercase shadow-2xl overflow-hidden active:scale-95 transition-all">
+                        <span className="relative z-10 flex items-center gap-2">
+                          {banner.buttonText} 
+                          <BoltIcon className="h-4 w-4 fill-current group-hover/btn:animate-pulse" />
+                        </span>
+                        <div className="absolute inset-0 bg-gray-100 translate-y-full group-hover/btn:translate-y-0 transition-transform duration-300"></div>
+                      </button>
+                    </div>
                   </div>
-                </button>
+  
+                  <div className={`absolute -right-10 md:-right-20 -bottom-10 md:-bottom-20 transition-all duration-1000 delay-300 transform ${index === currentBanner ? 'translate-x-0 rotate-0 opacity-20' : 'translate-x-40 -rotate-12 opacity-0'}`}>
+                    <banner.icon className="h-[300px] md:h-[600px] w-[300px] md:w-[600px] text-white pointer-events-none" />
+                  </div>
+                </div>
               ))}
+  
+              {/* Carousel Controls - Professional Styling */}
+              <div className="absolute inset-x-0 md:inset-x-8 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none z-30">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setCurrentBanner(prev => (prev - 1 + banners.length) % banners.length); }}
+                  className="p-3 md:p-5 bg-white/10 hover:bg-white/30 backdrop-blur-2xl rounded-full border border-white/20 text-white pointer-events-auto transition-all transform hover:-translate-x-1 active:scale-90 opacity-100 md:opacity-0 group-hover:opacity-100 flex items-center justify-center shadow-2xl"
+                >
+                  <ChevronLeftIcon className="h-5 w-5 md:h-7 md:w-7" />
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setCurrentBanner(prev => (prev + 1) % banners.length); }}
+                  className="p-3 md:p-5 bg-white/10 hover:bg-white/30 backdrop-blur-2xl rounded-full border border-white/20 text-white pointer-events-auto transition-all transform hover:translate-x-1 active:scale-90 opacity-100 md:opacity-0 group-hover:opacity-100 flex items-center justify-center shadow-2xl"
+                >
+                  <ChevronRightIcon className="h-5 w-5 md:h-7 md:w-7" />
+                </button>
+              </div>
+              
+              {/* Carousel Indicator Track */}
+              <div className="absolute bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 flex gap-2 md:gap-3 z-30">
+                {banners.map((_, index) => (
+                  <button 
+                    key={index}
+                    onClick={() => setCurrentBanner(index)}
+                    className="group py-2 px-1 focus:outline-none"
+                  >
+                    <div className={`h-1 md:h-1.5 rounded-full transition-all duration-500 overflow-hidden relative ${
+                      index === currentBanner ? 'w-8 md:w-12 bg-white' : 'w-2 md:w-3 bg-white/30 hover:bg-white/50'
+                    }`}>
+                      {index === currentBanner && (
+                        <div className="absolute inset-0 bg-white/40 animate-loading-bar origin-left"></div>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -381,53 +383,71 @@ export const StorePage: React.FC<StorePageProps> = ({ currentUser, onNavigate, s
 
       {/* Featured Products Horizontal Carousel */}
       {!propStoreId && filteredProducts.length > 0 && (
-        <div className="container mx-auto px-4 max-w-[1200px] mb-16 overflow-hidden">
-          <div className="flex items-end justify-between mb-8">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-1 bg-[#ff4747] rounded-full"></div>
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#ff4747]">Em Destaque</span>
-              </div>
-              <h3 className="text-3xl md:text-4xl font-black text-gray-900 dark:text-white tracking-tighter">Ofertas de Hoje</h3>
+        <div className="container mx-auto px-0 md:px-4 max-w-[1200px] mb-16 relative">
+          <div className="space-y-1 mb-8 px-4 md:px-0">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-1 bg-[#ff4747] rounded-full"></div>
+              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#ff4747]">Em Destaque</span>
             </div>
-            <div className="flex gap-2">
+            <h3 className="text-3xl md:text-4xl font-black text-gray-900 dark:text-white tracking-tighter">Ofertas de Hoje</h3>
+          </div>
+
+          <div className="relative group/carousel">
+            {/* Carousel Navigation Buttons - Professional Side Positioning */}
+            <div className="hidden md:block">
               <button 
                 onClick={() => scrollFeatured('left')}
-                className="p-2 border dark:border-white/10 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-30"
+                className="absolute -left-5 top-1/2 -translate-y-1/2 z-10 p-3 bg-white dark:bg-zinc-900 border dark:border-white/10 rounded-full shadow-xl hover:bg-gray-50 dark:hover:bg-white/5 transition-all cursor-pointer disabled:opacity-30 active:scale-90 group-hover/carousel:scale-110"
               >
-                <ChevronDownIcon className="h-5 w-5 rotate-90" />
+                <ChevronLeftIcon className="h-6 w-6" />
               </button>
               <button 
                 onClick={() => scrollFeatured('right')}
-                className="p-2 border dark:border-white/10 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-30"
+                className="absolute -right-5 top-1/2 -translate-y-1/2 z-10 p-3 bg-white dark:bg-zinc-900 border dark:border-white/10 rounded-full shadow-xl hover:bg-gray-50 dark:hover:bg-white/5 transition-all cursor-pointer disabled:opacity-30 active:scale-90 group-hover/carousel:scale-110"
               >
-                <ChevronDownIcon className="h-5 w-5 -rotate-90" />
+                <ChevronRightIcon className="h-6 w-6" />
               </button>
             </div>
-          </div>
 
-          <div 
-            ref={featuredScrollRef}
-            className="flex gap-4 overflow-x-auto no-scrollbar scroll-smooth pb-4 -mx-4 px-4 snap-x snap-mandatory"
-          >
-            {filteredProducts.slice(0, 10).map(product => (
-              <div key={`featured-${product.id}`} className="min-w-[160px] md:min-w-[200px] snap-start">
-                <ProductCard 
-                  product={product} 
-                  currentUser={currentUser} 
-                  onSelect={setSelectedProduct}
-                  onShare={(p) => setShareContent({
-                    title: `Confira este produto: ${p.name}`,
-                    text: p.description,
-                    url: `${window.location.origin}/?page=store&productId=${p.id}`,
-                    mediaUrl: p.imageUrls[0],
-                    mediaType: 'image'
-                  })}
-                  onAddToCart={onAddToCart}
-                  onOpenCart={onOpenCart}
-                />
-              </div>
-            ))}
+            <div 
+              ref={featuredScrollRef}
+              className="flex gap-4 overflow-x-auto no-scrollbar scroll-smooth pb-4 px-4 snap-x snap-mandatory"
+            >
+              {filteredProducts.slice(0, 10).map(product => (
+                <div key={`featured-${product.id}`} className="min-w-[calc(50%-12px)] md:min-w-[200px] snap-start">
+                  <ProductCard 
+                    product={product} 
+                    currentUser={currentUser} 
+                    onSelect={setSelectedProduct}
+                    onShare={(p) => setShareContent({
+                      title: `Confira este produto: ${p.name}`,
+                      text: p.description,
+                      url: `${window.location.origin}/?page=store&productId=${p.id}`,
+                      mediaUrl: p.imageUrls[0],
+                      mediaType: 'image'
+                    })}
+                    onAddToCart={onAddToCart}
+                    onOpenCart={onOpenCart}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Mobile Navigation Indicators/Buttons */}
+            <div className="flex md:hidden justify-center gap-4 mt-4">
+               <button 
+                  onClick={() => scrollFeatured('left')}
+                  className="p-3 bg-white dark:bg-zinc-900 border dark:border-white/10 rounded-full shadow-md active:scale-90"
+               >
+                  <ChevronLeftIcon className="h-5 w-5" />
+               </button>
+               <button 
+                  onClick={() => scrollFeatured('right')}
+                  className="p-3 bg-white dark:bg-zinc-900 border dark:border-white/10 rounded-full shadow-md active:scale-90"
+               >
+                  <ChevronRightIcon className="h-5 w-5" />
+               </button>
+            </div>
           </div>
         </div>
       )}
