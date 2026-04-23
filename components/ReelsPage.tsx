@@ -78,6 +78,8 @@ const ReelVideo: React.FC<ReelVideoProps> = ({
   // Optimistic Likes state
   const [localLikes, setLocalLikes] = useState<string[]>(post.likes || []);
   const [isLiked, setIsLiked] = useState(post.likes?.includes(currentUser.id) || false);
+  const [isSaved, setIsSaved] = useState(post.saves?.includes(currentUser.id) || false);
+  const [savesCount, setSavesCount] = useState(post.saves?.length || 0);
 
   const clickTimeout = useRef<number | null>(null);
 
@@ -92,7 +94,9 @@ const ReelVideo: React.FC<ReelVideoProps> = ({
   useEffect(() => {
     setLocalLikes(post.likes || []);
     setIsLiked(post.likes?.includes(currentUser.id) || false);
-  }, [post.likes, currentUser.id]);
+    setIsSaved(post.saves?.includes(currentUser.id) || false);
+    setSavesCount(post.saves?.length || 0);
+  }, [post.likes, post.saves, currentUser.id]);
 
   const isFollowing = currentUser.followedUsers?.includes(post.userId);
   const hasSaved = post.saves?.includes(currentUser.id);
@@ -220,6 +224,23 @@ const ReelVideo: React.FC<ReelVideoProps> = ({
     }
   };
 
+  const handleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Optimistic
+    const prevSaved = isSaved;
+    setIsSaved(!prevSaved);
+    setSavesCount(prev => prevSaved ? prev - 1 : prev + 1);
+    
+    try {
+      await updatePostSaves(post.id, currentUser.id);
+      onPostUpdate();
+    } catch (err) {
+      setIsSaved(prevSaved);
+      setSavesCount(prev => prevSaved ? prev + 1 : prev - 1);
+    }
+  };
+
   if (!postAuthor || !post.reel) return null;
 
   return (
@@ -310,9 +331,9 @@ const ReelVideo: React.FC<ReelVideoProps> = ({
         </button>
 
         {/* Save */}
-        <button onClick={(e) => { e.stopPropagation(); updatePostSaves(post.id, currentUser.id); onPostUpdate(); }} className="flex flex-col items-center group p-1">
-          <BookmarkIconSolid className={`h-8 w-8 drop-shadow-xl transition-all duration-300 group-active:scale-125 ${hasSaved ? 'text-yellow-400' : 'text-white'}`} />
-          <span className="text-[10px] font-black text-white mt-0.5 drop-shadow-md">{post.saves?.length || 0}</span>
+        <button onClick={handleSave} className="flex flex-col items-center group p-1">
+          <BookmarkIconSolid className={`h-8 w-8 drop-shadow-xl transition-all duration-300 group-active:scale-125 ${isSaved ? 'text-yellow-400' : 'text-white'}`} />
+          <span className="text-[10px] font-black text-white mt-0.5 drop-shadow-md">{savesCount}</span>
         </button>
 
         {/* Share */}

@@ -238,7 +238,14 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigate }) => {
               </div>
             )}
 
-            {error && <p className="text-red-500 text-[10px] font-bold uppercase text-center animate-pulse">{error}</p>}
+            {isRegister && (
+              <p className="text-[10px] text-gray-400 dark:text-gray-500 text-center px-4 leading-relaxed mt-4 font-medium uppercase tracking-tight">
+                Ao clicar em criar conta, você declara ter lido e concordado com nossos{' '}
+                <button type="button" onClick={() => onNavigate('terms')} className="text-brand font-black hover:underline underline-offset-4">Termos de Uso</button>{' '}
+                e nossa{' '}
+                <button type="button" onClick={() => onNavigate('privacy')} className="text-brand font-black hover:underline underline-offset-4">Diretiva de Privacidade</button>.
+              </p>
+            )}
 
             <button 
                type="submit" 

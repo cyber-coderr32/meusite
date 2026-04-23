@@ -77,10 +77,10 @@ const App: React.FC = () => {
     const [cartItems, setCartItems] = useState<CartItem[]>([]);
     const [isCartModalOpen, setIsCartModalOpen] = useState(false);
     const [walletConfig, setWalletConfig] = useState<{ isOpen: boolean, mode: 'deposit' | 'withdraw' }>({ isOpen: false, mode: 'deposit' });
-    const [isLoading, setIsLoading] = useState(false); 
+    const [isLoading, setIsLoading] = useState(true); // Começar como true para garantir o splash screen
     const [initError, setInitError] = useState<string | null>(null);
-    const [isOnline, setIsOnline] = useState(true); // Forçar true para evitar bloqueio offline errôneo
-    const [isOfflineModeEnabled, setIsOfflineModeEnabled] = useState(true); // Permitir offline por padrão
+    const [isOnline, setIsOnline] = useState(true); 
+    const [isOfflineModeEnabled, setIsOfflineModeEnabled] = useState(true); 
 
     
     const lastNotificationIdRef = useRef<string | null>(null);
@@ -256,60 +256,72 @@ const App: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        // Failsafe: Se o carregamento demorar mais de 6 segundos, força a abertura do app
-        const failsafeTimeout = setTimeout(() => {
-            if (isLoading) {
-                console.warn("[DEBUG] Carregamento demorou demais. Forçando inicialização...");
-                setIsLoading(false);
-            }
-        }, 6000);
-
         console.log("[DEBUG] Configurando listener de autenticação...");
+        
+        // Failsafe de segurança: Se nada acontecer em 8 segundos, força a saída do loading
+        const failsafe = setTimeout(() => {
+            setIsLoading(current => {
+               if (current) {
+                   console.warn("[DEBUG] Failsafe acionado: Inicialização forçada após timeout.");
+                   return false;
+               }
+               return false;
+            });
+        }, 8000);
+
         if (auth) {
             const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: any) => {
-                console.log("[DEBUG] Mudança no estado Auth:", firebaseUser ? "Usuário Autenticado" : "Usuário Não Autenticado");
-                if (firebaseUser) {
-                    saveCurrentUser(firebaseUser.uid);
-                    
-                    try {
-                        console.log("[DEBUG] Sincronizando perfil...");
-                        // Tenta sincronizar, mas não deixa travar a UI por mais de 4s
-                        const syncPromise = syncUserProfile(firebaseUser.uid, firebaseUser);
-                        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 4000));
+                console.log("[DEBUG] Mudança no estado Auth:", firebaseUser ? "Logado" : "Deslogado");
+                try {
+                    if (firebaseUser) {
+                        saveCurrentUser(firebaseUser.uid);
                         
-                        const result = await Promise.race([syncPromise, timeoutPromise]);
-                        console.log("[DEBUG] Resultado da sincronização:", result);
-
-                        if (result === 'timeout') {
-                            console.warn("[DEBUG] Sincronização de perfil atingiu timeout. Exibindo dados locais.");
+                        try {
+                            // Tenta sincronizar com timeout interno de 4s
+                            const syncPromise = syncUserProfile(firebaseUser.uid, firebaseUser);
+                            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 4000));
+                            
+                            const result = await Promise.race([syncPromise, timeoutPromise]);
+                            
+                            if (result === 'timeout') {
+                                console.warn("[DEBUG] Timeout na sincronização. Carregando dados parciais.");
+                                const tempUser = mapUserData(firebaseUser.uid, null, firebaseUser);
+                                setCurrentUser(tempUser);
+                            }
+                        } catch (syncErr) {
+                            console.error("[DEBUG] Erro na sincronização de perfil:", syncErr);
                             const tempUser = mapUserData(firebaseUser.uid, null, firebaseUser);
                             setCurrentUser(tempUser);
                         }
-                    } catch (syncErr) {
-                        console.error("[DEBUG] Erro ao sincronizar perfil durante init:", syncErr);
+                        
+                        setCurrentPage(prev => prev === 'auth' ? 'feed' : prev);
+                    } else {
+                        saveCurrentUser(null);
+                        setCurrentUser(null);
+                        setCurrentPage('auth');
                     }
-                    
-                    // Independentemente do resultado (sucesso ou timeout), se estava na auth, vai pro feed
-                    setCurrentPage(prev => prev === 'auth' ? 'feed' : prev);
+                } catch (fatalAuthErr) {
+                    console.error("[DEBUG] Erro fatal no listener de auth:", fatalAuthErr);
+                } finally {
                     setIsLoading(false);
-                } else {
-                    console.log("[DEBUG] Nenhum usuário logado, redirecionando para AuthPage.");
-                    saveCurrentUser(null);
-                    setCurrentUser(null);
-                    setCurrentPage('auth');
-                    lastNotificationIdRef.current = null;
-                    setIsLoading(false);
+                    clearTimeout(failsafe);
                 }
+            }, (error) => {
+                console.error("[DEBUG] Erro no observer do Firebase Auth:", error);
+                setIsLoading(false);
+                clearTimeout(failsafe);
+                setCurrentPage('auth');
             });
 
             return () => {
                 unsubscribe();
-                clearTimeout(failsafeTimeout);
+                clearTimeout(failsafe);
             };
         } else {
-            console.warn("[DEBUG] Firebase Auth não configurado ou offline.");
+            console.warn("[DEBUG] Firebase Auth ausente. Prosseguindo como guest/auth page.");
             setIsLoading(false);
-            return () => clearTimeout(failsafeTimeout);
+            clearTimeout(failsafe);
+            return () => {};
         }
     }, [syncUserProfile, auth]);
 

@@ -11,45 +11,53 @@ const LegalPage: React.FC<LegalPageProps> = ({ type, onBack }) => {
   const content = type === 'terms' ? {
     title: 'Termos de Uso',
     icon: <DocumentTextIcon className="h-12 w-12 text-blue-500" />,
-    description: 'Leia atentamente nossos termos antes de usar a plataforma.',
+    description: 'Contrato de adesão e diretrizes de convivência na rede CyBerPhone.',
     sections: [
       {
-        title: '1. Aceitação dos Termos',
-        text: 'Ao acessar o CyBerPhone, você concorda em cumprir estes termos de serviço, todas as leis e regulamentos aplicáveis ​​e concorda que é responsável pelo cumprimento de todas as leis locais aplicáveis.'
+        title: '1. Aceitação e Elegibilidade',
+        text: 'Ao acessar o CyBerPhone, você declara ter pelo menos 18 anos ou possuir autorização legal dos responsáveis. O uso da plataforma implica na aceitação integral destes termos, leis locais e regulamentos internacionais de conduta digital.'
       },
       {
-        title: '2. Uso de Licença',
-        text: 'É concedida permissão para carregar temporariamente uma cópia dos materiais na rede social CyBerPhone apenas para visualização transitória pessoal e não comercial.'
+        title: '2. Conduta e Conteúdo Proibido',
+        text: 'É terminantemente proibido publicar conteúdos que promovam discurso de ódio, violência, pornografia infantil, atividades ilegais ou desinformação. Nossa IA de moderação "Sentinel" monitora e remove automaticamente conteúdos que violem estes princípios para garantir a segurança da comunidade.'
       },
       {
-        title: '3. Isenção de Responsabilidade',
-        text: 'Os materiais no site da CyBerPhone são fornecidos "como estão". CyBerPhone não oferece garantias, expressas ou implícitas, e, por este meio, isenta e nega todas as outras garantias.'
+        title: '3. Propriedade Intelectual e Licença',
+        text: 'Você mantém os direitos sobre suas postagens, mas concede ao CyBerPhone uma licença irrevogável e global para hospedar, exibir e distribuir seu conteúdo no contexto dos serviços da rede social. O design e código da plataforma são propriedade exclusiva do CyBerPhone.'
       },
       {
-        title: '4. Conteúdo do Usuário',
-        text: 'Você mantém todos os direitos de propriedade sobre o conteúdo que publica. No entanto, ao publicar conteúdo, você concede à CyBerPhone uma licença mundial e não exclusiva para usar, hospedar e distribuir esse conteúdo.'
+        title: '4. Marketplace e Monetização',
+        text: 'Ao participar do sistema de afiliados ou gerir uma loja, você concorda com nossas taxas de comissão e prazos de repasse. Vendas de produtos ilícitos ou golpes resultarão em suspensão imediata da conta e retenção de saldos para investigação.'
+      },
+      {
+        title: '5. Moderação e Suspensão',
+        text: 'O CyBerPhone reserva-se o direito de remover qualquer conteúdo ou suspender contas que prejudiquem a experiência de outros usuários ou a integridade técnica do sistema, sem aviso prévio, caso as violações sejam consideradas graves.'
       }
     ]
   } : {
     title: 'Política de Privacidade',
     icon: <ShieldCheckIcon className="h-12 w-12 text-green-500" />,
-    description: 'Sua privacidade é nossa prioridade absoluta.',
+    description: 'Compromisso com a transparência e segurança total dos seus dados.',
     sections: [
       {
-        title: '1. Informações que Coletamos',
-        text: 'Coletamos informações que você nos fornece diretamente ao criar uma conta, como seu nome, e-mail, data de nascimento e foto de perfil.'
+        title: '1. Coleta e Finalidade dos Dados',
+        text: 'Coletamos dados de identificação (nome, e-mail, foto) e dados de uso (interações, localização se autorizado, metadados de mídia) com o objetivo exclusivo de personalizar seu feed, processar pagamentos de Marketplace e melhorar a IA de recomendação.'
       },
       {
-        title: '2. Como Usamos seus Dados',
-        text: 'Utilizamos seus dados para fornecer e melhorar nossos serviços, personalizar sua experiência e garantir a segurança da rede contra conteúdos ilícitos.'
+        title: '2. Armazenamento e Criptografia',
+        text: 'Todos os seus dados são armazenados em nuvem com criptografia de ponta-a-ponta. Informações de pagamento (cartões e transações) seguem os padrões de segurança bancários e não são visualizadas por nossa equipe interna.'
       },
       {
-        title: '3. Compartilhamento de Dados',
-        text: 'Não compartilhamos suas informações pessoais com terceiros, exceto quando necessário para cumprir obrigações legais ou com o seu consentimento explícito.'
+        title: '3. Seus Direitos (LGPD)',
+        text: 'Você tem o direito de solicitar a exclusão total de seus dados, retificar informações incorretas ou exportar seu histórico de atividades em formato legível por máquinas. Estas solicitações podem ser feitas diretamente nas configurações da sua conta.'
       },
       {
-        title: '4. Segurança',
-        text: 'Implementamos medidas de segurança de ponta para proteger seus dados contra acesso não autorizado, alteração ou destruição.'
+        title: '4. Cookies e Tecnologias de Rastreamento',
+        text: 'Utilizamos cookies essenciais para manter sua sessão ativa e tecnologias de análise para entender o engajamento do app. Não utilizamos rastreadores de terceiros para fins publicitários externos à plataforma sem seu consentimento.'
+      },
+      {
+        title: '5. Compartilhamento Restrito',
+        text: 'Seus dados pessoais nunca são vendidos. O compartilhamento ocorre apenas com prestadores de serviços essenciais (como gateways de pagamento) ou autoridades judiciais mediante ordem formal, conforme a legislação vigente.'
       }
     ]
   };
