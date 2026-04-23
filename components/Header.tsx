@@ -18,12 +18,27 @@ interface HeaderProps {
   cartItemCount: number;
   onOpenCart: () => void;
   onToggleMenu: () => void;
+  showInstallButton?: boolean;
+  onInstallApp?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ currentUser, onNavigate, unreadNotificationsCount, cartItemCount, onOpenCart, onToggleMenu }) => {
+const Header: React.FC<HeaderProps> = ({ 
+  currentUser, 
+  onNavigate, 
+  unreadNotificationsCount, 
+  cartItemCount, 
+  onOpenCart, 
+  onToggleMenu,
+  showInstallButton,
+  onInstallApp
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
+  
+  // Detecta se é iOS para mostrar o botão sempre (pois no iOS o evento beforeinstallprompt não dispara)
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const shouldShowInstall = showInstallButton || isIOS;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -88,6 +103,14 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onNavigate, unreadNotifica
 
         {currentUser ? (
           <div className="flex items-center gap-1 md:gap-4 flex-shrink-0">
+            {shouldShowInstall && (
+              <button 
+                onClick={onInstallApp}
+                className="hidden sm:flex items-center gap-1.5 bg-brand/10 hover:bg-brand/20 text-brand px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all animate-pulse"
+              >
+                Instalar App
+              </button>
+            )}
             <button onClick={() => setIsMobileSearchOpen(true)} className="lg:hidden p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl">
               <MagnifyingGlassIcon className="h-5 w-5 md:h-6 md:w-6" />
             </button>

@@ -82,34 +82,57 @@ const App: React.FC = () => {
     const [isOnline, setIsOnline] = useState(true); 
     const [isOfflineModeEnabled, setIsOfflineModeEnabled] = useState(true); 
     const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+    const [showInstallButton, setShowInstallButton] = useState(false);
+    const [showInstallHint, setShowInstallHint] = useState(false);
 
     // --- LÓGICA DE PWA (INSTALL PROMPT) ---
     useEffect(() => {
         const handleBeforeInstallPrompt = (e: any) => {
-            // Previne o mini-infobar padrão do Chrome
             e.preventDefault();
-            // Salva o evento para ser disparado depois
             setDeferredPrompt(e);
-            console.log("[PWA] Prompt de instalação interceptado");
+            setShowInstallButton(true);
+            console.log("[PWA] Prompt de instalação interceptado e pronto");
         };
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+        // Verifica se já está rodando em modo standalone
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+        if (isStandalone) {
+            setShowInstallButton(false);
+        } else {
+            // Se não for standalone e for mobile, mostra uma dica após 5 segundos
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (isMobile) {
+                const timer = setTimeout(() => setShowInstallHint(true), 5000);
+                return () => clearTimeout(timer);
+            }
+        }
 
         return () => {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
         };
     }, []);
 
-    const handleInstallApp = useCallback(async () => {
-        if (!deferredPrompt) return;
-        
+    const installApp = useCallback(async () => {
+        if (!deferredPrompt) {
+            // Se não houver prompt (iOS ou já instalado), mostra dica
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+            if (isIOS) {
+                alert("Para instalar no iOS: Toque em 'Compartilhar' (ícone central) e selecione 'Adicionar à Tela de Início'.");
+            } else {
+                alert("O aplicativo já está instalado ou seu navegador não suporta a instalação direta.");
+            }
+            return;
+        }
+
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
         console.log(`[PWA] Usuário escolheu: ${outcome}`);
         setDeferredPrompt(null);
+        setShowInstallButton(false);
     }, [deferredPrompt]);
 
-    
     const lastNotificationIdRef = useRef<string | null>(null);
     const lastMessageCountRef = useRef(0);
 
@@ -539,7 +562,21 @@ const App: React.FC = () => {
                       cartItemCount={cartItems.length} 
                       onOpenCart={() => setIsCartModalOpen(true)} 
                       onToggleMenu={() => setIsMenuOpen(!isMenuOpen)}
+                      showInstallButton={showInstallButton}
+                      onInstallApp={installApp}
                     />
+                )}
+                {showInstallHint && !currentUser && (
+                    <div className="fixed bottom-24 left-4 right-4 bg-brand text-white p-4 rounded-2xl shadow-2xl z-[200] flex items-center justify-between animate-fade-in border border-white/20">
+                        <div className="flex flex-col gap-0.5">
+                            <h4 className="font-black uppercase text-[10px] tracking-widest text-white/80">Dica CyBer</h4>
+                            <p className="text-xs font-bold leading-tight">Instale o app para ter a melhor experiência full-screen!</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                             <button onClick={installApp} className="bg-white text-brand px-3 py-1.5 rounded-xl text-[10px] font-black uppercase">Instalar</button>
+                             <button onClick={() => setShowInstallHint(false)} className="p-1 text-white/50"><ExclamationTriangleIcon className="h-4 w-4 rotate-180" /></button>
+                        </div>
+                    </div>
                 )}
                 <div className="flex flex-1 relative w-full items-stretch">
                     {currentUser && currentPage !== 'admin' && (

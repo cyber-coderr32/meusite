@@ -3,6 +3,7 @@ const CACHE_NAME = 'cyberphone-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
+  '/?standalone=true',
   '/icon-192x192.png',
   '/icon-512x512.png'
 ];
