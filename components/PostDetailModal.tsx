@@ -249,7 +249,7 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, currentUser, on
               {Object.entries(c.reactions).map(([emoji, uids]) => uids.length > 0 && (
                 <button 
                   key={emoji}
-                  onClick={() => handleToggleReaction(c.id, emoji)}
+                  onClick={(e) => { e.stopPropagation(); handleToggleReaction(c.id, emoji); }}
                   className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition-all ${uids.includes(currentUser.id) ? 'bg-brand/10 border-brand/20 text-brand' : 'bg-gray-50 dark:bg-white/5 border-transparent text-gray-500'}`}
                 >
                   <span>{emoji}</span>
@@ -262,7 +262,7 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, currentUser, on
           <div className="mt-3 flex items-center gap-6 text-gray-500 text-[13px]">
             <div className="relative">
               <button 
-                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
                 className={`flex items-center gap-1 group transition-colors ${hasCommentLiked ? 'text-pink-600' : ''}`}
               >
                 <div className="p-2 -m-2 rounded-full group-hover:bg-pink-600/10 group-hover:text-pink-600">
@@ -271,11 +271,11 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, currentUser, on
               </button>
               
               {showEmojiPicker && (
-                <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-zinc-800 shadow-2xl border dark:border-white/10 p-2 rounded-2xl flex gap-2 z-50 backdrop-blur-xl">
+                <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-zinc-800 shadow-2xl border dark:border-white/10 p-2 rounded-2xl flex gap-2 z-50 backdrop-blur-xl" onClick={e => e.stopPropagation()}>
                   {EMOJIS.map(emoji => (
                     <button 
                       key={emoji} 
-                      onClick={() => { handleToggleReaction(c.id, emoji); setShowEmojiPicker(false); }}
+                      onClick={(e) => { e.stopPropagation(); handleToggleReaction(c.id, emoji); setShowEmojiPicker(false); }}
                       className="text-xl hover:scale-125 transition-transform active:scale-90 p-1"
                     >
                       {emoji}
@@ -296,9 +296,7 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, currentUser, on
               <span className="group-hover:text-brand font-bold">Responder</span>
             </button>
 
-            <button className="flex items-center gap-1 group">
-              <div className="p-2 -m-2 rounded-full group-hover:bg-brand/10 group-hover:text-brand"><ShareIcon className="h-4 w-4" /></div>
-            </button>
+            {/* Botão de compartilhar em comentário removido */}
           </div>
 
           {c.replies && c.replies.length > 0 && (

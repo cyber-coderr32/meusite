@@ -72,7 +72,7 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onNavigate, unreadNotifica
               <input
                 ref={searchInputRef}
                 type="text"
-                className="block w-full pl-11 pr-12 py-2.5 border border-transparent dark:border-white/5 rounded-2xl bg-gray-100/80 dark:bg-white/5 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand/50 focus:bg-white dark:focus:bg-zinc-900 text-sm font-medium transition-all shadow-sm dark:text-white group-focus-within:shadow-[0_0_15px_rgba(37,99,235,0.1)]"
+                className="block w-full pl-11 pr-12 py-2.5 border border-gray-200 dark:border-white/5 rounded-full bg-gray-100/50 dark:bg-white/5 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:bg-white dark:focus:bg-zinc-900 text-sm font-medium transition-all shadow-sm dark:text-white group-focus-within:border-brand/40"
                 placeholder="Pesquisar algo incrível..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -127,15 +127,17 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onNavigate, unreadNotifica
               <ArrowLeftIcon className="h-6 w-6 dark:text-white" />
             </button>
             <form onSubmit={handleSearchSubmit} className="flex-1 relative">
-              <MagnifyingGlassIcon className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-5 text-brand" />
-              <input 
-                autoFocus 
-                type="text" 
-                placeholder="O que você procura?" 
-                className="w-full bg-transparent pl-8 text-[18px] font-bold outline-none dark:text-white placeholder-gray-400" 
-                value={searchQuery} 
-                onChange={(e) => setSearchQuery(e.target.value)} 
-              />
+              <div className="bg-gray-100 dark:bg-white/5 rounded-full px-4 py-2 flex items-center gap-2 border border-transparent focus-within:border-brand/30 transition-all">
+                <MagnifyingGlassIcon className="h-5 w-5 text-brand shrink-0" />
+                <input 
+                  autoFocus 
+                  type="text" 
+                  placeholder="O que você procura?" 
+                  className="w-full bg-transparent text-[16px] font-medium outline-none dark:text-white placeholder-gray-400" 
+                  value={searchQuery} 
+                  onChange={(e) => setSearchQuery(e.target.value)} 
+                />
+              </div>
             </form>
           </div>
           
