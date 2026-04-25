@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
       'process.env': env,
     },
     build: {
-      outDir: 'dist',
+      outDir: 'build',
       sourcemap: true,
       commonjsOptions: {
         transformMixedEsModules: true,
