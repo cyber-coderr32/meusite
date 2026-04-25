@@ -18,11 +18,14 @@ export default defineConfig(({ mode }) => {
         srcDir: 'src',
         filename: 'sw.js',
         manifestFilename: 'manifest.json',
+        injectManifest: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        },
         registerType: 'autoUpdate',
         injectRegister: 'script',
         includeAssets: ['icon-192x192.png', 'icon-512x512.png'],
         devOptions: {
-          enabled: true,
+          enabled: false,
           type: 'module'
         },
         manifest: {
@@ -80,7 +83,7 @@ export default defineConfig(({ mode }) => {
       'process.env': env,
     },
     build: {
-      outDir: 'dist',
+      outDir: 'build',
       sourcemap: true,
       commonjsOptions: {
         transformMixedEsModules: true,
