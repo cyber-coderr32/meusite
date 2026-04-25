@@ -38,28 +38,4 @@ try {
   `;
 }
 
-// Service worker registration for PWA
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    // Registra o sw.js (que está na pasta public/)
-    navigator.serviceWorker.register('/sw.js')
-      .then(registration => {
-        console.log('[PWA] ServiceWorker registrado com sucesso:', registration.scope);
-        
-        // Atualiza o SW imediatamente se houver uma nova versão
-        registration.addEventListener('updatefound', () => {
-          const newWorker = registration.installing;
-          if (newWorker) {
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('[PWA] Nova versão disponível. Por favor, recarregue para atualizar.');
-              }
-            });
-          }
-        });
-      })
-      .catch(err => {
-        console.error('[PWA] Erro ao registrar ServiceWorker:', err);
-      });
-  });
-}
+// Service worker registration will be handled automatically by vite-plugin-pwa
